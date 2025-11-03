@@ -56,7 +56,20 @@ export default function MeScreen() {
     if (!familyId) return;
 
     try {
-      const { data, error } = await supabase
+      // First try to get from families table
+      const { data: familyData, error: familyError } = await supabase
+        .from('families')
+        .select('active_invite_code')
+        .eq('id', familyId)
+        .single();
+
+      if (familyData && familyData.active_invite_code) {
+        setFamilyCode(familyData.active_invite_code);
+        return;
+      }
+
+      // Fallback: try to get from family_invite_codes table
+      const { data: codeData, error: codeError } = await supabase
         .from('family_invite_codes')
         .select('code')
         .eq('family_id', familyId)
@@ -65,8 +78,8 @@ export default function MeScreen() {
         .limit(1)
         .single();
 
-      if (data) {
-        setFamilyCode(data.code);
+      if (codeData) {
+        setFamilyCode(codeData.code);
       }
     } catch (error) {
       console.error('Error fetching family code:', error);
@@ -266,29 +279,50 @@ export default function MeScreen() {
             role={userRole || 'member'}
           />
 
-          {userRole === 'owner' && familyCode && (
+          {userRole === 'owner' && (
             <Card style={styles.familyCodeCard}>
               <Text style={styles.familyCodeTitle}>Family Invite Code</Text>
               <Text style={styles.familyCodeDescription}>
                 Share this code with family members to invite them
               </Text>
-              <View style={styles.codeContainer}>
-                <Text style={styles.codeText}>{formatFamilyCode(familyCode)}</Text>
-              </View>
               
-              <TouchableOpacity 
-                style={styles.shareButton}
-                onPress={handleShareCode}
-              >
-                <Share2 size={20} color={Colors.accent} />
-                <Text style={styles.shareButtonText}>Share Code</Text>
-              </TouchableOpacity>
+              {familyCode ? (
+                <>
+                  <View style={styles.codeContainer}>
+                    <Text style={styles.codeText}>{formatFamilyCode(familyCode)}</Text>
+                  </View>
+                  
+                  <TouchableOpacity 
+                    style={styles.shareButton}
+                    onPress={handleShareCode}
+                  >
+                    <Share2 size={20} color={Colors.accent} />
+                    <Text style={styles.shareButtonText}>Share Code</Text>
+                  </TouchableOpacity>
 
-              <TouchableOpacity onPress={handleGenerateNewCode} disabled={loadingCode}>
-                <Text style={styles.generateNewText}>
-                  {loadingCode ? 'Generating...' : 'Generate New Code'}
-                </Text>
-              </TouchableOpacity>
+                  <TouchableOpacity onPress={handleGenerateNewCode} disabled={loadingCode}>
+                    <Text style={styles.generateNewText}>
+                      {loadingCode ? 'Generating...' : 'Generate New Code'}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <View style={styles.codeContainer}>
+                    <Text style={styles.noCodeText}>No code generated yet</Text>
+                  </View>
+                  
+                  <TouchableOpacity 
+                    style={styles.generateButton}
+                    onPress={handleGenerateNewCode}
+                    disabled={loadingCode}
+                  >
+                    <Text style={styles.generateButtonText}>
+                      {loadingCode ? 'Generating...' : 'Generate Invite Code'}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
             </Card>
           )}
 
@@ -369,6 +403,26 @@ const styles = StyleSheet.create({
     color: Colors.accent,
     textAlign: 'center',
     textDecorationLine: 'underline',
+  },
+  noCodeText: {
+    fontSize: Typography.body,
+    fontFamily: Typography.bodyFont,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
+  },
+  generateButton: {
+    backgroundColor: Colors.accent,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+    marginTop: Spacing.sm,
+  },
+  generateButtonText: {
+    fontSize: Typography.body,
+    fontFamily: Typography.bodyFont,
+    color: Colors.beige,
+    fontWeight: Typography.semibold,
   },
   shareButton: {
     flexDirection: 'row',

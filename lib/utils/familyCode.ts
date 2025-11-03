@@ -26,6 +26,20 @@ export async function generateFamilyInviteCode(familyId: string, createdBy: stri
     throw new Error('Failed to create invite code');
   }
 
+  // Update the families table with the active invite code
+  const { error: updateError } = await supabase
+    .from('families')
+    .update({
+      active_invite_code: code,
+      invite_code_created_at: new Date().toISOString(),
+    })
+    .eq('id', familyId);
+
+  if (updateError) {
+    console.error('Error updating families table with invite code:', updateError);
+    // Don't throw - the code was created successfully, just not synced to families table
+  }
+
   return code;
 }
 

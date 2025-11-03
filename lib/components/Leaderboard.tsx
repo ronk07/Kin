@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { Flame } from 'lucide-react-native';
 import { Card } from './Card';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 
@@ -9,6 +10,7 @@ interface LeaderboardEntry {
   points: number;
   rank: number;
   avatar_url?: string | null;
+  streak?: number;
 }
 
 interface LeaderboardProps {
@@ -74,7 +76,15 @@ export function Leaderboard({ entries, period = 'weekly' }: LeaderboardProps) {
                     </Text>
                   )}
                 </View>
-                <Text style={styles.pointsText}>{entry.points.toLocaleString()} points</Text>
+                <View style={styles.statsRow}>
+                  <Text style={styles.pointsText}>{entry.points.toLocaleString()} points</Text>
+                  {entry.streak !== undefined && (
+                    <View style={styles.streakContainer}>
+                      <Flame size={16} color={Colors.accent} fill={Colors.accent} />
+                      <Text style={styles.streakText}>{entry.streak}</Text>
+                    </View>
+                  )}
+                </View>
               </View>
             </View>
           );
@@ -153,7 +163,23 @@ const styles = StyleSheet.create({
   medal: {
     fontSize: 20,
   },
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
   pointsText: {
+    fontSize: Typography.caption,
+    fontFamily: Typography.bodyFont,
+    color: Colors.accent,
+    fontWeight: Typography.semibold,
+  },
+  streakContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  streakText: {
     fontSize: Typography.caption,
     fontFamily: Typography.bodyFont,
     color: Colors.accent,

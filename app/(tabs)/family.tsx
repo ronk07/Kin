@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, ScrollView, View, Text, Alert, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import { Container } from '@/lib/components/Container';
 import { Leaderboard } from '@/lib/components/Leaderboard';
 import { Feed } from '@/lib/components/Feed';
@@ -13,6 +14,7 @@ interface LeaderboardEntry {
   points: number;
   rank: number;
   avatar_url?: string | null;
+  streak?: number;
 }
 
 interface FeedItem {
@@ -24,6 +26,21 @@ interface FeedItem {
 export default function FamilyScreen() {
   const { family, members, activities, loading, refreshAll } = useFamily();
   const [refreshing, setRefreshing] = useState(false);
+
+  // Auto-refresh when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      const refreshData = async () => {
+        try {
+          await refreshAll();
+        } catch (error) {
+          console.error('Error auto-refreshing family data:', error);
+        }
+      };
+      
+      refreshData();
+    }, [refreshAll])
+  );
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -44,6 +61,7 @@ export default function FamilyScreen() {
       points: member.total_points || 0,
       rank: index + 1,
       avatar_url: member.avatar_url,
+      streak: member.current_streak || 0,
     }));
 
   const feedItems: FeedItem[] = activities.map((activity) => ({

@@ -240,6 +240,35 @@ export interface Database {
           verified_at?: string | null;
         };
       };
+      daily_steps: {
+        Row: {
+          id: string;
+          user_id: string;
+          date: string;
+          steps: number;
+          source: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          date: string;
+          steps?: number;
+          source?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          date?: string;
+          steps?: number;
+          source?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
     };
   };
 }

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
-import { Check, Camera } from 'lucide-react-native';
+import { Check } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Card } from './Card';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
@@ -9,10 +9,11 @@ interface TaskCardProps {
   title: string;
   subtitle?: string;
   verified: boolean;
-  onVerify: (imageUri: string) => Promise<void>;
+  onVerify: (imageUri?: string) => Promise<void>;
+  onMarkIncomplete?: () => Promise<void>;
 }
 
-export function TaskCard({ title, subtitle, verified, onVerify }: TaskCardProps) {
+export function TaskCard({ title, subtitle, verified, onVerify, onMarkIncomplete }: TaskCardProps) {
   const [loading, setLoading] = useState(false);
 
   const requestPermissions = async () => {
@@ -32,20 +33,32 @@ export function TaskCard({ title, subtitle, verified, onVerify }: TaskCardProps)
   const handleVerifyPress = async () => {
     if (loading || verified) return;
 
-    const hasPermission = await requestPermissions();
-    if (!hasPermission) return;
-
     Alert.alert(
-      'Add Photo',
-      'Choose an option',
+      'Verify Completion',
+      'How would you like to verify?',
       [
         {
+          text: 'Mark Complete',
+          onPress: () => onVerify(),
+          style: 'default',
+        },
+        {
           text: 'Take Photo',
-          onPress: () => openCamera(),
+          onPress: async () => {
+            const hasPermission = await requestPermissions();
+            if (hasPermission) {
+              openCamera();
+            }
+          },
         },
         {
           text: 'Choose from Library',
-          onPress: () => openLibrary(),
+          onPress: async () => {
+            const hasPermission = await requestPermissions();
+            if (hasPermission) {
+              openLibrary();
+            }
+          },
         },
         {
           text: 'Cancel',
@@ -107,18 +120,41 @@ export function TaskCard({ title, subtitle, verified, onVerify }: TaskCardProps)
         </View>
 
         {verified ? (
-          <View style={styles.verifiedBadge}>
+          <TouchableOpacity 
+            style={styles.verifiedBadge}
+            onPress={async () => {
+              if (onMarkIncomplete) {
+                Alert.alert(
+                  'Mark Incomplete',
+                  'Are you sure you want to mark this task as incomplete?',
+                  [
+                    {
+                      text: 'Cancel',
+                      style: 'cancel',
+                    },
+                    {
+                      text: 'Mark Incomplete',
+                      style: 'destructive',
+                      onPress: async () => {
+                        await onMarkIncomplete();
+                      },
+                    },
+                  ]
+                );
+              }
+            }}
+            disabled={loading || !onMarkIncomplete}
+          >
             <Check size={16} color={Colors.beige} />
             <Text style={styles.verifiedText}>Verified</Text>
-          </View>
+          </TouchableOpacity>
         ) : (
           <TouchableOpacity 
             style={styles.verifyButton}
             onPress={handleVerifyPress}
             disabled={loading}
           >
-            <Camera size={20} color={Colors.accent} />
-            <Text style={styles.verifyText}>Verify</Text>
+            <Text style={styles.verifyText}>Complete</Text>
           </TouchableOpacity>
         )}
       </View>

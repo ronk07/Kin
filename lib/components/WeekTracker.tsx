@@ -6,7 +6,8 @@ import { Colors, Typography, Spacing } from '@/constants/theme';
 interface DayData {
   dayLetter: string;
   dayNumber: number;
-  completed: boolean;
+  date: string; // ISO date string (YYYY-MM-DD)
+  completed: boolean; // true if BOTH tasks completed
   isToday: boolean;
 }
 
@@ -14,9 +15,17 @@ interface WeekTrackerProps {
   weekData: DayData[];
   onPreviousWeek: () => void;
   onNextWeek: () => void;
+  onDayPress?: (date: string) => void;
+  selectedDate?: string;
 }
 
-export function WeekTracker({ weekData, onPreviousWeek, onNextWeek }: WeekTrackerProps) {
+export function WeekTracker({ 
+  weekData, 
+  onPreviousWeek, 
+  onNextWeek,
+  onDayPress,
+  selectedDate 
+}: WeekTrackerProps) {
   return (
     <View style={styles.container}>
       <TouchableOpacity onPress={onPreviousWeek} style={styles.arrow}>
@@ -24,19 +33,33 @@ export function WeekTracker({ weekData, onPreviousWeek, onNextWeek }: WeekTracke
       </TouchableOpacity>
 
       <View style={styles.daysContainer}>
-        {weekData.map((day, index) => (
-          <View key={index} style={styles.dayColumn}>
-            <View style={[
-              styles.circle,
-              day.completed && styles.circleFilled,
-              !day.completed && styles.circleDotted,
-              day.isToday && styles.circleToday,
-            ]}>
-              <Text style={styles.dayLetter}>{day.dayLetter}</Text>
-            </View>
-            <Text style={styles.dayNumber}>{day.dayNumber}</Text>
-          </View>
-        ))}
+        {weekData.map((day, index) => {
+          const isSelected = selectedDate === day.date;
+          
+          return (
+            <TouchableOpacity
+              key={index}
+              style={styles.dayColumn}
+              onPress={() => onDayPress?.(day.date)}
+              activeOpacity={0.7}
+            >
+              <View style={[
+                styles.circle,
+                day.completed ? styles.circleFilled : styles.circleDotted,
+                day.isToday && styles.circleToday,
+                isSelected && styles.circleSelected,
+              ]}>
+                <Text style={[
+                  styles.dayLetter,
+                  day.completed && styles.dayLetterCompleted
+                ]}>
+                  {day.dayLetter}
+                </Text>
+              </View>
+              <Text style={styles.dayNumber}>{day.dayNumber}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       <TouchableOpacity onPress={onNextWeek} style={styles.arrow}>
@@ -79,25 +102,29 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
   },
   circleFilled: {
     borderWidth: 2,
     borderColor: Colors.accent,
+    backgroundColor: Colors.accent,
   },
   circleDotted: {
     borderWidth: 2,
     borderStyle: 'dashed',
     borderColor: Colors.textSecondary,
+    backgroundColor: 'transparent',
   },
   circleToday: {
     borderWidth: 3,
-    borderColor: Colors.accent,
   },
-  innerCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: Colors.accent,
+  circleSelected: {
+    borderWidth: 3,
+    borderColor: Colors.accent,
+    backgroundColor: Colors.accent + '30',
+  },
+  dayLetterCompleted: {
+    color: Colors.beige,
   },
   dayNumber: {
     fontSize: Typography.caption,
@@ -106,4 +133,3 @@ const styles = StyleSheet.create({
     fontWeight: Typography.medium,
   },
 });
-
