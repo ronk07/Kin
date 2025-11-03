@@ -1,13 +1,14 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Card } from './Card';
-import { Colors, Typography, Spacing } from '@/constants/theme';
+import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 
 interface LeaderboardEntry {
   id: string;
   name: string;
   points: number;
   rank: number;
+  avatar_url?: string | null;
 }
 
 interface LeaderboardProps {
@@ -16,73 +17,144 @@ interface LeaderboardProps {
 }
 
 export function Leaderboard({ entries, period = 'weekly' }: LeaderboardProps) {
-  const getRankEmoji = (rank: number) => {
-    switch (rank) {
-      case 1:
-        return '🥇';
-      case 2:
-        return '🥈';
-      case 3:
-        return '🥉';
-      default:
-        return `${rank}.`;
+  if (entries.length === 0) {
+    return (
+      <Card style={styles.card}>
+        <Text style={styles.title}>Leaderboard</Text>
+        <Text style={styles.subtitle}>Your leaderboard gives you instant reference</Text>
+        <Text style={styles.empty}>No rankings yet</Text>
+      </Card>
+    );
+  }
+
+  // Get initials for avatar
+  const getInitials = (name: string) => {
+    const parts = name.split(' ');
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
     }
+    return name.substring(0, 2).toUpperCase();
   };
 
   return (
-    <Card style={styles.card}>
-      <Text style={styles.title}>Leaderboard ({period})</Text>
-      {entries.length === 0 ? (
-        <Text style={styles.empty}>No rankings yet</Text>
-      ) : (
-        entries.map((entry) => (
-          <View key={entry.id} style={styles.row}>
-            <Text style={styles.rank}>{getRankEmoji(entry.rank)}</Text>
-            <Text style={styles.name} numberOfLines={1}>
-              {entry.name}
-            </Text>
-            <Text style={styles.points}>{entry.points} pts</Text>
-          </View>
-        ))
-      )}
-    </Card>
+    <View style={styles.container}>
+      <Card style={styles.card}>
+        <Text style={styles.title}>Leaderboard</Text>
+        <Text style={styles.subtitle}>Your leaderboard gives you instant reference</Text>
+        
+        {/* List View for All Members */}
+        {entries.map((entry, index) => {
+          const rank = entry.rank;
+          const isTopThree = rank <= 3;
+
+          return (
+            <View 
+              key={entry.id} 
+              style={[
+                styles.listItem,
+                index === entries.length - 1 && styles.lastItem
+              ]}
+            >
+              {/* Avatar */}
+              <View style={styles.avatarContainer}>
+                <View style={styles.avatarPlaceholder}>
+                  <Text style={styles.avatarInitials}>{getInitials(entry.name)}</Text>
+                </View>
+              </View>
+
+              {/* Name and Points */}
+              <View style={styles.infoContainer}>
+                <View style={styles.nameRow}>
+                  <Text style={styles.memberName} numberOfLines={1}>
+                    {entry.name}
+                  </Text>
+                  {isTopThree && (
+                    <Text style={styles.medal}>
+                      {rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉'}
+                    </Text>
+                  )}
+                </View>
+                <Text style={styles.pointsText}>{entry.points.toLocaleString()} points</Text>
+              </View>
+            </View>
+          );
+        })}
+      </Card>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: Colors.surface,
+  container: {
     marginBottom: Spacing.lg,
   },
+  card: {
+    backgroundColor: Colors.surface,
+    padding: Spacing.lg,
+  },
   title: {
-    fontSize: Typography.h3,
+    fontSize: Typography.h2,
     fontFamily: Typography.headingFont,
     color: Colors.text,
     fontWeight: Typography.bold,
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.xs,
   },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.textSecondary + '30',
-  },
-  rank: {
-    fontSize: Typography.body,
+  subtitle: {
+    fontSize: Typography.caption,
     fontFamily: Typography.bodyFont,
     color: Colors.textSecondary,
-    width: 40,
+    marginBottom: Spacing.lg,
   },
-  name: {
+  listItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.textSecondary + '20',
+  },
+  lastItem: {
+    borderBottomWidth: 0,
+  },
+  avatarContainer: {
+    marginRight: Spacing.md,
+  },
+  avatarPlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: Colors.surfaceElevated,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: Colors.textSecondary + '30',
+  },
+  avatarInitials: {
+    fontSize: Typography.body,
+    fontFamily: Typography.headingFont,
+    color: Colors.text,
+    fontWeight: Typography.bold,
+  },
+  infoContainer: {
     flex: 1,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginBottom: Spacing.xs,
+  },
+  memberName: {
     fontSize: Typography.body,
     fontFamily: Typography.bodyFont,
     color: Colors.text,
-    marginLeft: Spacing.sm,
+    fontWeight: Typography.semibold,
+    flex: 1,
   },
-  points: {
-    fontSize: Typography.body,
+  medal: {
+    fontSize: 20,
+  },
+  pointsText: {
+    fontSize: Typography.caption,
     fontFamily: Typography.bodyFont,
     color: Colors.accent,
     fontWeight: Typography.semibold,
@@ -96,4 +168,3 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
   },
 });
-

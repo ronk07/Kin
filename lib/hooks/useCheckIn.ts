@@ -15,13 +15,20 @@ export function useCheckIn({ userId, familyId }: UseCheckInProps = {}) {
 
   // Fetch current streak
   useEffect(() => {
-    if (userId && familyId) {
+    // Skip fetching if using mock IDs (not valid UUIDs)
+    if (userId && familyId && !userId.includes('mock') && !familyId.includes('mock')) {
       fetchStreak();
     }
   }, [userId, familyId]);
 
   const fetchStreak = async () => {
     if (!userId || !familyId) return;
+    
+    // Skip database calls for mock data
+    if (userId.includes('mock') || familyId.includes('mock')) {
+      setStreakDays(5); // Mock streak for development
+      return;
+    }
 
     try {
       // Get all verified check-ins, ordered by date descending
@@ -69,6 +76,16 @@ export function useCheckIn({ userId, familyId }: UseCheckInProps = {}) {
   const handleCheckIn = async (imageUri: string) => {
     if (!userId || !familyId) {
       Alert.alert('Error', 'User not logged in');
+      return;
+    }
+
+    // For mock users, show success without database operations
+    if (userId.includes('mock') || familyId.includes('mock')) {
+      Alert.alert(
+        'Development Mode',
+        'Check-in successful! (Mock mode - no data saved)\n\nSet up authentication and Supabase to enable full functionality.',
+        [{ text: 'OK' }]
+      );
       return;
     }
 

@@ -14,7 +14,17 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.kin.app",
+      "infoPlist": {
+        "NSHealthShareUsageDescription": "Kin needs access to your step count data to track your daily fitness goals and display your progress.",
+        "NSHealthUpdateUsageDescription": "Kin may update your health data to record your workouts.",
+        "UIBackgroundModes": ["fetch"]
+      },
+      "entitlements": {
+        "com.apple.developer.healthkit": true,
+        "com.apple.developer.healthkit.access": ["health-records"]
+      }
     },
     "android": {
       "adaptiveIcon": {

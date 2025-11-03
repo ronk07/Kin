@@ -91,10 +91,10 @@ async function convertImageToBase64(uri: string): Promise<string> {
   }
 
   // For local file URIs in React Native, use file system
-  const FileSystem = require('expo-file-system');
+  const FileSystem = require('expo-file-system/legacy');
   try {
     const base64 = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType.Base64,
+      encoding: 'base64',
     });
     return base64;
   } catch (error) {
