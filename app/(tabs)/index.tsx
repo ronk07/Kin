@@ -381,13 +381,28 @@ export default function HomeScreen() {
     completionId: string,
     details: { caloriesBurned?: number; durationMinutes?: number; bibleChapter?: string }
   ) => {
-    if (!user) return;
+    if (!user || !familyId) return;
 
     try {
+      const today = new Date().toISOString().split('T')[0];
+      const completionDate = selectedDate || today;
+
+      // Get the completion record to check its current status
+      const { data: completionData, error: fetchError } = await supabase
+        .from('task_completions')
+        .select('completed_date, verification_status')
+        .eq('id', completionId)
+        .eq('user_id', user.id)
+        .single();
+
+      if (fetchError) throw fetchError;
+
       const updateData: {
         calories_burned?: number | null;
         duration_minutes?: number | null;
         bible_chapter?: string | null;
+        verification_status?: 'verified';
+        verified_at?: string;
       } = {};
 
       if (taskName === 'workout') {
@@ -395,6 +410,33 @@ export default function HomeScreen() {
         updateData.duration_minutes = details.durationMinutes ?? null;
       } else {
         updateData.bible_chapter = details.bibleChapter ?? null;
+      }
+
+      // If this is a pending completion (just created), mark it as verified and award points
+      const isPendingCompletion = completionData?.verification_status === 'pending';
+      
+      if (isPendingCompletion) {
+        updateData.verification_status = 'verified';
+        updateData.verified_at = new Date().toISOString();
+
+        // Award points when marking as verified
+        await supabase
+          .from('points')
+          .insert({
+            user_id: user.id,
+            family_id: familyId,
+            points: 10,
+            source: `${taskName} completion`,
+          });
+
+        // Update UI to show task as completed
+        const todayDate = new Date().toISOString().split('T')[0];
+        if (completionDate === todayDate) {
+          setCompletedTasks(prev => ({ ...prev, [taskName]: true }));
+        }
+        if (selectedDate === completionDate) {
+          setSelectedDayTasks(prev => ({ ...prev, [taskName]: true }));
+        }
       }
 
       const { error } = await supabase
@@ -405,11 +447,14 @@ export default function HomeScreen() {
 
       if (error) throw error;
 
-      // Refresh data to show updated details
+      // Refresh data to show updated details and completion status
       await fetchUserData();
       if (selectedDate) {
         await fetchDailyDetails(selectedDate);
       }
+
+      // Refresh week completions to update circle indicators
+      await fetchWeekCompletions();
     } catch (error: any) {
       console.error('Error saving task details:', error);
       Alert.alert('Error', error.message || 'Failed to save task details');
@@ -562,7 +607,6 @@ export default function HomeScreen() {
     if (!user || !familyId) return;
 
     const dateToUse = completionDate || selectedDate || new Date().toISOString().split('T')[0];
-    const todayDate = new Date().toISOString().split('T')[0];
     const verificationInfo: VerificationResponse = verificationResultOverride ?? (
       imageUri
         ? {
@@ -619,7 +663,7 @@ export default function HomeScreen() {
         proofUrl = urlData.publicUrl;
       }
 
-      // Create task completion
+      // Create task completion with 'pending' status - will be verified after details are added
       const { data: completionData, error: completionError } = await supabase
         .from('task_completions')
         .insert({
@@ -628,11 +672,11 @@ export default function HomeScreen() {
           family_id: familyId,
           completed_date: dateToUse,
           proof_url: proofUrl,
-          verification_status: isVerified ? 'verified' : 'rejected',
+          verification_status: isVerified ? 'pending' : 'rejected',
           verification_confidence: verificationInfo.confidence ?? null,
           verification_reason: verificationInfo.reason ?? null,
           verification_model: verificationInfo.model ?? null,
-          verified_at: isVerified ? new Date().toISOString() : null,
+          verified_at: null, // Will be set when details are submitted
         })
         .select('id')
         .single();
@@ -640,44 +684,8 @@ export default function HomeScreen() {
       if (completionError) throw completionError;
       const completionId = completionData?.id || null;
 
-      // Award points when verified
-      if (isVerified) {
-        await supabase
-          .from('points')
-          .insert({
-            user_id: user.id,
-            family_id: familyId,
-            points: 10,
-            source: `${taskName} completion`,
-          });
-      }
-
-      const detail: TaskVerificationDetail = {
-        confidence: verificationInfo.confidence ?? null,
-        reason: verificationInfo.reason ?? null,
-        proofUrl,
-        verifiedAt: isVerified ? new Date().toISOString() : null,
-        model: verificationInfo.model ?? null,
-        caloriesBurned: null,
-        durationMinutes: null,
-        bibleChapter: null,
-        completionId,
-      };
-
-      if (isVerified && dateToUse === todayDate) {
-        setCompletedTasks(prev => ({ ...prev, [taskName]: true }));
-        setTodayTaskDetails(prev => ({ ...prev, [taskName]: detail }));
-      }
-
-      if (isVerified && selectedDate === dateToUse) {
-        setSelectedDayTasks(prev => ({ ...prev, [taskName]: true }));
-        setSelectedDayDetails(prev => ({ ...prev, [taskName]: detail }));
-      }
-
-      await fetchUserData();
-
-      // Refresh week completions to update circle indicators
-      await fetchWeekCompletions();
+      // Don't award points yet - will be awarded when details are submitted
+      // Don't update UI yet - task will be marked complete after details are submitted
       
       return completionId;
     } catch (error: any) {
@@ -1035,7 +1043,31 @@ export default function HomeScreen() {
             setPendingCompletionId(null);
             setTaskDetailsTaskName(null);
           }}
-          onCancel={() => {
+          onCancel={async () => {
+            // If this is a new pending completion (not editing), delete it on cancel
+            if (pendingCompletionId && !editingTaskDetails && user) {
+              try {
+                // Check if it's pending before deleting
+                const { data: completionData } = await supabase
+                  .from('task_completions')
+                  .select('verification_status')
+                  .eq('id', pendingCompletionId)
+                  .eq('user_id', user.id)
+                  .single();
+
+                // Only delete if it's still pending (not verified)
+                if (completionData?.verification_status === 'pending') {
+                  await supabase
+                    .from('task_completions')
+                    .delete()
+                    .eq('id', pendingCompletionId)
+                    .eq('user_id', user.id);
+                }
+              } catch (error) {
+                console.error('Error deleting pending completion on cancel:', error);
+              }
+            }
+
             setTaskDetailsFormVisible(false);
             setEditingTaskDetails(null);
             setPendingCompletionId(null);

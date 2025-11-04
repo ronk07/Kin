@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, ScrollView, View, Text, Alert, ActivityIndicator, TouchableOpacity, Share, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Share2 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Container } from '@/lib/components/Container';
@@ -66,16 +66,7 @@ export default function MeScreen() {
     }
   };
 
-  useEffect(() => {
-    if (!userLoading && !familyLoading && user && familyId) {
-      fetchTotalPoints();
-      if (userRole === 'owner') {
-        fetchFamilyCode();
-      }
-    }
-  }, [userLoading, familyLoading, user, familyId, userRole]);
-
-  const fetchTotalPoints = async () => {
+  const fetchTotalPoints = React.useCallback(async () => {
     if (!user) return;
 
     try {
@@ -91,9 +82,9 @@ export default function MeScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
 
-  const fetchFamilyCode = async () => {
+  const fetchFamilyCode = React.useCallback(async () => {
     if (!familyId) return;
 
     try {
@@ -125,7 +116,28 @@ export default function MeScreen() {
     } catch (error) {
       console.error('Error fetching family code:', error);
     }
-  };
+  }, [familyId]);
+
+  useEffect(() => {
+    if (!userLoading && !familyLoading && user && familyId) {
+      fetchTotalPoints();
+      if (userRole === 'owner') {
+        fetchFamilyCode();
+      }
+    }
+  }, [userLoading, familyLoading, user, familyId, userRole, fetchTotalPoints, fetchFamilyCode]);
+
+  // Refresh points and family code whenever the screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      if (!userLoading && !familyLoading && user && familyId) {
+        fetchTotalPoints();
+        if (userRole === 'owner') {
+          fetchFamilyCode();
+        }
+      }
+    }, [userLoading, familyLoading, user, familyId, userRole, fetchTotalPoints, fetchFamilyCode])
+  );
 
   const handleGenerateNewCode = async () => {
     if (!user || !familyId) return;
