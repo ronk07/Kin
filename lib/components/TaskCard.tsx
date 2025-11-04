@@ -11,9 +11,21 @@ interface TaskCardProps {
   verified: boolean;
   onVerify: (imageUri?: string) => Promise<void>;
   onViewDetails?: () => void;
+  caloriesBurned?: number | null;
+  durationMinutes?: number | null;
+  bibleChapter?: string | null;
 }
 
-export function TaskCard({ title, subtitle, verified, onVerify, onViewDetails }: TaskCardProps) {
+export function TaskCard({ 
+  title, 
+  subtitle, 
+  verified, 
+  onVerify, 
+  onViewDetails,
+  caloriesBurned,
+  durationMinutes,
+  bibleChapter,
+}: TaskCardProps) {
   const [loading, setLoading] = useState(false);
 
   const requestPermissions = async () => {
@@ -116,6 +128,20 @@ export function TaskCard({ title, subtitle, verified, onVerify, onViewDetails }:
       <View style={styles.textSection}>
         <Text style={styles.title}>{title}</Text>
         {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+        {verified && (
+          <>
+            {(caloriesBurned !== null || durationMinutes !== null) && (
+              <Text style={styles.detailsText}>
+                {caloriesBurned !== null && `${caloriesBurned} cal`}
+                {caloriesBurned !== null && durationMinutes !== null && ' • '}
+                {durationMinutes !== null && `${durationMinutes} min`}
+              </Text>
+            )}
+            {bibleChapter && (
+              <Text style={styles.detailsText}>{bibleChapter}</Text>
+            )}
+          </>
+        )}
       </View>
 
       {verified ? (
@@ -215,6 +241,13 @@ const styles = StyleSheet.create({
     fontFamily: Typography.bodyFont,
     color: Colors.beige,
     fontWeight: Typography.semibold,
+  },
+  detailsText: {
+    fontSize: Typography.bodySmall,
+    fontFamily: Typography.bodyFont,
+    color: Colors.textSecondary,
+    marginTop: Spacing.xs,
+    fontWeight: Typography.medium,
   },
 });
 

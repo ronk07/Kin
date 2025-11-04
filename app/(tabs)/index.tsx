@@ -4,6 +4,7 @@ import { Container } from '@/lib/components/Container';
 import { DailyScripture } from '@/lib/components/DailyScripture';
 import { StepCounter } from '@/lib/components/StepCounter';
 import { TaskCard } from '@/lib/components/TaskCard';
+import { TaskDetailsForm } from '@/lib/components/TaskDetailsForm';
 import { VerificationModal } from '@/lib/components/VerificationModal';
 import { WeekTracker } from '@/lib/components/WeekTracker';
 import { useAuth } from '@/lib/context/AuthContext';
@@ -24,6 +25,10 @@ type TaskVerificationDetail = {
   proofUrl: string | null;
   verifiedAt: string | null;
   model: string | null;
+  caloriesBurned: number | null;
+  durationMinutes: number | null;
+  bibleChapter: string | null;
+  completionId: string | null;
 };
 
 export default function HomeScreen() {
@@ -49,6 +54,12 @@ export default function HomeScreen() {
   const [verificationLoading, setVerificationLoading] = useState(false);
   const [pendingCompletionDate, setPendingCompletionDate] = useState<string | null>(null);
   const [verificationModalMode, setVerificationModalMode] = useState<'decision' | 'review'>('decision');
+  
+  // Task details form state
+  const [taskDetailsFormVisible, setTaskDetailsFormVisible] = useState(false);
+  const [editingTaskDetails, setEditingTaskDetails] = useState<{ taskName: 'workout' | 'bible_reading'; completionId: string } | null>(null);
+  const [pendingCompletionId, setPendingCompletionId] = useState<string | null>(null);
+  const [taskDetailsTaskName, setTaskDetailsTaskName] = useState<'workout' | 'bible_reading' | null>(null);
 
   useEffect(() => {
     if (!userLoading && !familyLoading && user && familyId) {
@@ -113,7 +124,7 @@ export default function HomeScreen() {
       const today = new Date().toISOString().split('T')[0];
       const { data: completions } = await supabase
         .from('task_completions')
-        .select('task_name, proof_url, verification_confidence, verification_reason, verification_model, verified_at')
+        .select('id, task_name, proof_url, verification_confidence, verification_reason, verification_model, verified_at, calories_burned, duration_minutes, bible_chapter')
         .eq('user_id', user.id)
         .eq('completed_date', today)
         .eq('verification_status', 'verified');
@@ -129,6 +140,10 @@ export default function HomeScreen() {
             proofUrl: c.proof_url ?? null,
             verifiedAt: c.verified_at ?? null,
             model: c.verification_model ?? null,
+            caloriesBurned: c.calories_burned ?? null,
+            durationMinutes: c.duration_minutes ?? null,
+            bibleChapter: c.bible_chapter ?? null,
+            completionId: c.id ?? null,
           };
         }
       });
@@ -264,7 +279,12 @@ export default function HomeScreen() {
               {
                 text: 'Yes, Mark Complete',
                 onPress: async () => {
-                  await performTaskVerification(taskName, undefined, completionDate, manualVerification);
+                  const completionId = await performTaskVerification(taskName, undefined, completionDate, manualVerification);
+                  if (completionId) {
+                    setPendingCompletionId(completionId);
+                    setTaskDetailsTaskName(taskName);
+                    setTaskDetailsFormVisible(true);
+                  }
                   resolve();
                 },
               },
@@ -272,7 +292,12 @@ export default function HomeScreen() {
           );
         });
       }
-      await performTaskVerification(taskName, undefined, completionDate, manualVerification);
+      const completionId = await performTaskVerification(taskName, undefined, completionDate, manualVerification);
+      if (completionId) {
+        setPendingCompletionId(completionId);
+        setTaskDetailsTaskName(taskName);
+        setTaskDetailsFormVisible(true);
+      }
       return;
     }
 
@@ -317,7 +342,12 @@ export default function HomeScreen() {
               resetVerificationState();
 
               const proceed = async () => {
-                await performTaskVerification(taskName, imageUri, completionDate, fallbackVerification);
+                const completionId = await performTaskVerification(taskName, imageUri, completionDate, fallbackVerification);
+                if (completionId) {
+                  setPendingCompletionId(completionId);
+                  setTaskDetailsTaskName(taskName);
+                  setTaskDetailsFormVisible(true);
+                }
               };
 
               if (completionDate < today) {
@@ -346,6 +376,77 @@ export default function HomeScreen() {
     }
   };
 
+  const handleSaveTaskDetails = async (
+    taskName: 'workout' | 'bible_reading',
+    completionId: string,
+    details: { caloriesBurned?: number; durationMinutes?: number; bibleChapter?: string }
+  ) => {
+    if (!user) return;
+
+    try {
+      const updateData: {
+        calories_burned?: number | null;
+        duration_minutes?: number | null;
+        bible_chapter?: string | null;
+      } = {};
+
+      if (taskName === 'workout') {
+        updateData.calories_burned = details.caloriesBurned ?? null;
+        updateData.duration_minutes = details.durationMinutes ?? null;
+      } else {
+        updateData.bible_chapter = details.bibleChapter ?? null;
+      }
+
+      const { error } = await supabase
+        .from('task_completions')
+        .update(updateData)
+        .eq('id', completionId)
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      // Refresh data to show updated details
+      await fetchUserData();
+      if (selectedDate) {
+        await fetchDailyDetails(selectedDate);
+      }
+    } catch (error: any) {
+      console.error('Error saving task details:', error);
+      Alert.alert('Error', error.message || 'Failed to save task details');
+    }
+  };
+
+  const handleEditTaskDetails = (taskName: 'workout' | 'bible_reading') => {
+    // Close verification modal first
+    setVerificationModalVisible(false);
+    
+    const dateForDetails = selectedDate || new Date().toISOString().split('T')[0];
+    const detailSource = selectedDate ? selectedDayDetails : todayTaskDetails;
+    const detail = detailSource[taskName];
+
+    if (!detail || !detail.completionId) {
+      // If no detail found, try using pendingCompletionId if available
+      if (pendingCompletionId && verificationTaskName === taskName) {
+        setEditingTaskDetails({
+          taskName,
+          completionId: pendingCompletionId,
+        });
+        setTaskDetailsTaskName(taskName);
+        setTaskDetailsFormVisible(true);
+      } else {
+        Alert.alert('Error', 'Unable to find task completion to edit.');
+      }
+      return;
+    }
+
+    setEditingTaskDetails({
+      taskName,
+      completionId: detail.completionId,
+    });
+    setTaskDetailsTaskName(taskName);
+    setTaskDetailsFormVisible(true);
+  };
+
   const handleAcceptVerification = async () => {
     if (!verificationTaskName) {
       setVerificationModalVisible(false);
@@ -365,13 +466,21 @@ export default function HomeScreen() {
       const today = new Date().toISOString().split('T')[0];
 
       const execute = async () => {
-        await performTaskVerification(
+        const currentTaskName = verificationTaskName; // Store before reset
+        const completionId = await performTaskVerification(
           verificationTaskName,
           verificationImageUri || undefined,
           completionDate,
           verificationResult || undefined
         );
         resetVerificationState();
+        
+        // Show task details form after verification
+        if (completionId && currentTaskName) {
+          setPendingCompletionId(completionId);
+          setTaskDetailsTaskName(currentTaskName);
+          setTaskDetailsFormVisible(true);
+        }
       };
 
       if (completionDate < today) {
@@ -511,7 +620,7 @@ export default function HomeScreen() {
       }
 
       // Create task completion
-      const { error: completionError } = await supabase
+      const { data: completionData, error: completionError } = await supabase
         .from('task_completions')
         .insert({
           task_name: taskName,
@@ -524,9 +633,12 @@ export default function HomeScreen() {
           verification_reason: verificationInfo.reason ?? null,
           verification_model: verificationInfo.model ?? null,
           verified_at: isVerified ? new Date().toISOString() : null,
-        });
+        })
+        .select('id')
+        .single();
 
       if (completionError) throw completionError;
+      const completionId = completionData?.id || null;
 
       // Award points when verified
       if (isVerified) {
@@ -546,6 +658,10 @@ export default function HomeScreen() {
         proofUrl,
         verifiedAt: isVerified ? new Date().toISOString() : null,
         model: verificationInfo.model ?? null,
+        caloriesBurned: null,
+        durationMinutes: null,
+        bibleChapter: null,
+        completionId,
       };
 
       if (isVerified && dateToUse === todayDate) {
@@ -562,9 +678,12 @@ export default function HomeScreen() {
 
       // Refresh week completions to update circle indicators
       await fetchWeekCompletions();
+      
+      return completionId;
     } catch (error: any) {
       console.error('Error verifying task:', error);
       Alert.alert('Error', error.message || 'Failed to verify task');
+      return null;
     }
   };
 
@@ -640,7 +759,7 @@ export default function HomeScreen() {
       // Fetch tasks completed on this date
       const { data: tasksData } = await supabase
         .from('task_completions')
-        .select('task_name, proof_url, verification_confidence, verification_reason, verification_model, verified_at')
+        .select('id, task_name, proof_url, verification_confidence, verification_reason, verification_model, verified_at, calories_burned, duration_minutes, bible_chapter')
         .eq('user_id', user.id)
         .eq('completed_date', date)
         .eq('verification_status', 'verified');
@@ -660,6 +779,10 @@ export default function HomeScreen() {
             proofUrl: record.proof_url ?? null,
             verifiedAt: record.verified_at ?? null,
             model: record.verification_model ?? null,
+            caloriesBurned: record.calories_burned ?? null,
+            durationMinutes: record.duration_minutes ?? null,
+            bibleChapter: record.bible_chapter ?? null,
+            completionId: record.id ?? null,
           };
         }
       });
@@ -837,6 +960,10 @@ export default function HomeScreen() {
                 ? selectedDayTasks[taskKey] || false
                 : completedTasks[taskKey] || false;
               
+              // Get task details for display
+              const detailSource = selectedDate ? selectedDayDetails : todayTaskDetails;
+              const taskDetails = detailSource[taskKey];
+              
               return (
                 <TaskCard
                   key={task.id}
@@ -845,6 +972,9 @@ export default function HomeScreen() {
                   verified={taskCompleted}
                   onVerify={(imageUri) => handleTaskVerify(taskKey, imageUri)}
                   onViewDetails={() => openVerificationReview(taskKey)}
+                  caloriesBurned={taskDetails?.caloriesBurned ?? null}
+                  durationMinutes={taskDetails?.durationMinutes ?? null}
+                  bibleChapter={taskDetails?.bibleChapter ?? null}
                 />
               );
             })
@@ -864,6 +994,68 @@ export default function HomeScreen() {
           onReject={handleRejectVerification}
           primaryButtonLabel={verificationModalMode === 'decision' ? 'Accept' : 'Close'}
           secondaryButtonLabel={verificationModalMode === 'decision' ? 'Reject' : 'Mark Incomplete'}
+          caloriesBurned={
+            verificationModalMode === 'review' && verificationTaskName
+              ? (selectedDate ? selectedDayDetails : todayTaskDetails)[verificationTaskName]?.caloriesBurned ?? null
+              : null
+          }
+          durationMinutes={
+            verificationModalMode === 'review' && verificationTaskName
+              ? (selectedDate ? selectedDayDetails : todayTaskDetails)[verificationTaskName]?.durationMinutes ?? null
+              : null
+          }
+          bibleChapter={
+            verificationModalMode === 'review' && verificationTaskName
+              ? (selectedDate ? selectedDayDetails : todayTaskDetails)[verificationTaskName]?.bibleChapter ?? null
+              : null
+          }
+          onEditDetails={
+            verificationModalMode === 'review' && verificationTaskName
+              ? () => handleEditTaskDetails(verificationTaskName)
+              : undefined
+          }
+        />
+      )}
+      
+      {/* Task Details Form */}
+      {taskDetailsFormVisible && (taskDetailsTaskName || editingTaskDetails) && (
+        <TaskDetailsForm
+          visible={taskDetailsFormVisible}
+          taskName={editingTaskDetails?.taskName || taskDetailsTaskName || 'workout'}
+          onSubmit={async (details) => {
+            const taskName = editingTaskDetails?.taskName || taskDetailsTaskName || 'workout';
+            const completionId = editingTaskDetails?.completionId || pendingCompletionId;
+            
+            if (completionId) {
+              await handleSaveTaskDetails(taskName, completionId, details);
+            }
+            
+            setTaskDetailsFormVisible(false);
+            setEditingTaskDetails(null);
+            setPendingCompletionId(null);
+            setTaskDetailsTaskName(null);
+          }}
+          onCancel={() => {
+            setTaskDetailsFormVisible(false);
+            setEditingTaskDetails(null);
+            setPendingCompletionId(null);
+            setTaskDetailsTaskName(null);
+          }}
+          initialValues={
+            editingTaskDetails
+              ? (() => {
+                  const detailSource = selectedDate ? selectedDayDetails : todayTaskDetails;
+                  const detail = detailSource[editingTaskDetails.taskName];
+                  return detail
+                    ? {
+                        caloriesBurned: detail.caloriesBurned,
+                        durationMinutes: detail.durationMinutes,
+                        bibleChapter: detail.bibleChapter,
+                      }
+                    : undefined;
+                })()
+              : undefined
+          }
         />
       )}
     </Container>

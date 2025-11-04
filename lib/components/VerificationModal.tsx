@@ -15,6 +15,10 @@ interface VerificationModalProps {
   onReject?: () => void;
   primaryButtonLabel?: string;
   secondaryButtonLabel?: string;
+  caloriesBurned?: number | null;
+  durationMinutes?: number | null;
+  bibleChapter?: string | null;
+  onEditDetails?: () => void;
 }
 
 export function VerificationModal({
@@ -27,6 +31,10 @@ export function VerificationModal({
   onReject,
   primaryButtonLabel = 'Accept',
   secondaryButtonLabel = 'Reject',
+  caloriesBurned,
+  durationMinutes,
+  bibleChapter,
+  onEditDetails,
 }: VerificationModalProps) {
   const getConfidenceColor = (confidence: number) => {
     if (confidence >= 0.8) return Colors.accent; // High confidence - green
@@ -121,16 +129,55 @@ export function VerificationModal({
                   </View>
                   <Text style={styles.reasonText}>{verificationResult.reason}</Text>
                 </View>
+
+                {/* Task Details */}
+                {(caloriesBurned !== null || durationMinutes !== null || bibleChapter) && (
+                  <View style={styles.detailsContainer}>
+                    <View style={styles.detailsHeader}>
+                      <Text style={styles.detailsLabel}>Task Details:</Text>
+                      {onEditDetails && (
+                        <TouchableOpacity onPress={onEditDetails} style={styles.editButton}>
+                          <Text style={styles.editButtonText}>Edit</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    {taskName.toLowerCase().includes('workout') ? (
+                      <View style={styles.detailsContent}>
+                        {caloriesBurned !== null && (
+                          <Text style={styles.detailsText}>{caloriesBurned} calories</Text>
+                        )}
+                        {durationMinutes !== null && (
+                          <Text style={styles.detailsText}>
+                            {caloriesBurned !== null ? ' • ' : ''}
+                            {durationMinutes} minutes
+                          </Text>
+                        )}
+                        {caloriesBurned === null && durationMinutes === null && (
+                          <Text style={styles.detailsTextPlaceholder}>No details added yet</Text>
+                        )}
+                      </View>
+                    ) : (
+                      <View style={styles.detailsContent}>
+                        {bibleChapter ? (
+                          <Text style={styles.detailsText}>{bibleChapter}</Text>
+                        ) : (
+                          <Text style={styles.detailsTextPlaceholder}>No chapter added yet</Text>
+                        )}
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {/* Add Details Button (if no details exist) */}
+                {caloriesBurned === null && durationMinutes === null && !bibleChapter && onEditDetails && (
+                  <TouchableOpacity onPress={onEditDetails} style={styles.addDetailsButton}>
+                    <Text style={styles.addDetailsButtonText}>Add Details</Text>
+                  </TouchableOpacity>
+                )}
               </View>
 
               {/* Action Buttons */}
               <View style={styles.buttonContainer}>
-                <TouchableOpacity
-                  style={[styles.button, styles.acceptButton]}
-                  onPress={onAccept}
-                >
-                  <Text style={styles.acceptButtonText}>{primaryButtonLabel}</Text>
-                </TouchableOpacity>
                 {onReject && (
                   <TouchableOpacity
                     style={[styles.button, styles.rejectButton]}
@@ -139,6 +186,12 @@ export function VerificationModal({
                     <Text style={styles.rejectButtonText}>{secondaryButtonLabel}</Text>
                   </TouchableOpacity>
                 )}
+                <TouchableOpacity
+                  style={[styles.button, styles.acceptButton]}
+                  onPress={onAccept}
+                >
+                  <Text style={styles.acceptButtonText}>{primaryButtonLabel}</Text>
+                </TouchableOpacity>
               </View>
             </>
           ) : (
@@ -312,6 +365,66 @@ const styles = StyleSheet.create({
     fontSize: Typography.bodySmall,
     fontFamily: Typography.bodyFont,
     color: Colors.textSecondary,
+  },
+  detailsContainer: {
+    backgroundColor: Colors.surface,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    marginTop: Spacing.md,
+  },
+  detailsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.xs,
+  },
+  detailsLabel: {
+    fontSize: Typography.bodySmall,
+    fontFamily: Typography.bodyFont,
+    color: Colors.textSecondary,
+    fontWeight: Typography.semibold,
+  },
+  editButton: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+  editButtonText: {
+    fontSize: Typography.bodySmall,
+    fontFamily: Typography.bodyFont,
+    color: Colors.accent,
+    fontWeight: Typography.semibold,
+  },
+  detailsContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  detailsText: {
+    fontSize: Typography.bodySmall,
+    fontFamily: Typography.bodyFont,
+    color: Colors.text,
+  },
+  detailsTextPlaceholder: {
+    fontSize: Typography.bodySmall,
+    fontFamily: Typography.bodyFont,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
+  },
+  addDetailsButton: {
+    backgroundColor: Colors.surface,
+    borderWidth: 2,
+    borderColor: Colors.accent,
+    borderRadius: BorderRadius.md,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    alignItems: 'center',
+    marginTop: Spacing.md,
+  },
+  addDetailsButtonText: {
+    fontSize: Typography.bodySmall,
+    fontFamily: Typography.bodyFont,
+    color: Colors.accent,
+    fontWeight: Typography.semibold,
   },
 });
 

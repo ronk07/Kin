@@ -129,6 +129,9 @@ export interface Database {
           verification_confidence: number | null;
           verification_reason: string | null;
           verification_model: string | null;
+          calories_burned: number | null;
+          duration_minutes: number | null;
+          bible_chapter: string | null;
           created_at: string;
         };
         Insert: {
@@ -143,6 +146,9 @@ export interface Database {
           verification_confidence?: number | null;
           verification_reason?: string | null;
           verification_model?: string | null;
+          calories_burned?: number | null;
+          duration_minutes?: number | null;
+          bible_chapter?: string | null;
           created_at?: string;
         };
         Update: {
@@ -157,6 +163,9 @@ export interface Database {
           verification_confidence?: number | null;
           verification_reason?: string | null;
           verification_model?: string | null;
+          calories_burned?: number | null;
+          duration_minutes?: number | null;
+          bible_chapter?: string | null;
         };
       };
       points: {
