@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { StyleSheet, ScrollView, View, Text, Alert, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay } from 'react-native-reanimated';
 import { Container } from '@/lib/components/Container';
 import { Leaderboard } from '@/lib/components/Leaderboard';
 import { Feed } from '@/lib/components/Feed';
@@ -26,21 +27,58 @@ interface FeedItem {
 export default function FamilyScreen() {
   const { family, members, activities, loading, refreshAll } = useFamily();
   const [refreshing, setRefreshing] = useState(false);
+  const refreshAllRef = useRef(refreshAll);
 
-  // Auto-refresh when screen comes into focus
+  // Keep ref updated with latest refreshAll function
+  React.useEffect(() => {
+    refreshAllRef.current = refreshAll;
+  }, [refreshAll]);
+
+  // Animation values
+  const headerOpacity = useSharedValue(0);
+  const headerTranslateY = useSharedValue(-20);
+  const sectionsOpacity = useSharedValue(0);
+
+  // Auto-refresh when screen comes into focus (only once per focus)
   useFocusEffect(
     React.useCallback(() => {
       const refreshData = async () => {
         try {
-          await refreshAll();
+          await refreshAllRef.current();
         } catch (error) {
           console.error('Error auto-refreshing family data:', error);
         }
       };
       
       refreshData();
-    }, [refreshAll])
+    }, [])
   );
+
+  // Separate animation effect that runs when screen comes into focus and loading is false
+  useFocusEffect(
+    React.useCallback(() => {
+      if (!loading) {
+        // Reset animation values
+        headerOpacity.value = 0;
+        headerTranslateY.value = -20;
+        sectionsOpacity.value = 0;
+        
+        // Play animations
+        headerOpacity.value = withTiming(1, { duration: 500 });
+        headerTranslateY.value = withTiming(0, { duration: 500 });
+        sectionsOpacity.value = withDelay(100, withTiming(1, { duration: 600 }));
+      }
+    }, [loading])
+  );
+
+  const headerAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: headerOpacity.value,
+    transform: [{ translateY: headerTranslateY.value }],
+  }));
+
+  const sectionsAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: sectionsOpacity.value,
+  }));
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -95,11 +133,17 @@ export default function FamilyScreen() {
             />
           }
         >
-          <Text style={styles.title}>{family?.name ? `${family.name} Family` : 'Family'}</Text>
+          <Animated.View style={headerAnimatedStyle}>
+            <Text style={styles.title}>{family?.name ? `${family.name} Family` : 'Family'}</Text>
+          </Animated.View>
 
-          <Leaderboard entries={leaderboard} period="weekly" />
+          <Animated.View style={sectionsAnimatedStyle}>
+            <Leaderboard entries={leaderboard} period="weekly" />
+          </Animated.View>
 
-          <Feed items={feedItems} />
+          <Animated.View style={sectionsAnimatedStyle}>
+            <Feed items={feedItems} />
+          </Animated.View>
         </ScrollView>
       </SafeAreaView>
     </Container>

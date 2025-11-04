@@ -5,7 +5,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Image } from 'react-native';
 
 import { useColorScheme } from '@/components/useColorScheme';
 import { AuthProvider, useAuth } from '@/lib/context/AuthContext';
@@ -39,7 +39,16 @@ export default function RootLayout() {
   }, [loaded]);
 
   if (!loaded) {
-    return null;
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background }}>
+        <Image 
+          source={require('../assets/images/KinLogo.png')} 
+          style={{ width: 200, height: 200, marginBottom: 24 }}
+          resizeMode="contain"
+        />
+        <ActivityIndicator size="large" color={Colors.accent} />
+      </View>
+    );
   }
 
   return (
@@ -97,6 +106,11 @@ function RootLayoutNav() {
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background }}>
+        <Image 
+          source={require('../assets/images/KinLogo.png')} 
+          style={{ width: 200, height: 200, marginBottom: 24 }}
+          resizeMode="contain"
+        />
         <ActivityIndicator size="large" color={Colors.accent} />
       </View>
     );

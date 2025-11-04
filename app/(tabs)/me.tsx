@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, ScrollView, View, Text, Alert, ActivityIndicator, TouchableOpacity, Share, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay } from 'react-native-reanimated';
 import { Share2 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Container } from '@/lib/components/Container';
@@ -26,6 +27,11 @@ export default function MeScreen() {
   const [loading, setLoading] = useState(true);
   const [showReminderTimePicker, setShowReminderTimePicker] = useState(false);
   const router = useRouter();
+
+  // Animation values
+  const headerOpacity = useSharedValue(0);
+  const headerTranslateY = useSharedValue(-20);
+  const sectionsOpacity = useSharedValue(0);
 
   // Helper function to format reminder time from TIME string (HH:MM:SS) to readable format
   const formatReminderTime = (timeString: string | null | undefined): string => {
@@ -136,8 +142,30 @@ export default function MeScreen() {
           fetchFamilyCode();
         }
       }
-    }, [userLoading, familyLoading, user, familyId, userRole, fetchTotalPoints, fetchFamilyCode])
+
+      // Animate whenever screen comes into focus
+      if (!loading && !userLoading && !familyLoading) {
+        // Reset animation values
+        headerOpacity.value = 0;
+        headerTranslateY.value = -20;
+        sectionsOpacity.value = 0;
+        
+        // Play animations
+        headerOpacity.value = withTiming(1, { duration: 500 });
+        headerTranslateY.value = withTiming(0, { duration: 500 });
+        sectionsOpacity.value = withDelay(100, withTiming(1, { duration: 600 }));
+      }
+    }, [userLoading, familyLoading, user, familyId, userRole, fetchTotalPoints, fetchFamilyCode, loading])
   );
+
+  const headerAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: headerOpacity.value,
+    transform: [{ translateY: headerTranslateY.value }],
+  }));
+
+  const sectionsAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: sectionsOpacity.value,
+  }));
 
   const handleGenerateNewCode = async () => {
     if (!user || !familyId) return;
@@ -358,74 +386,86 @@ export default function MeScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.title}>Me</Text>
+          <Animated.View style={headerAnimatedStyle}>
+            <Text style={styles.title}>Me</Text>
+          </Animated.View>
 
-          <ProfileCard
-            name={profile?.name || 'User'}
-            email={profile?.email || user?.email || ''}
-            points={totalPoints}
-            role={userRole || 'member'}
-          />
+          <Animated.View style={sectionsAnimatedStyle}>
+            <ProfileCard
+              name={profile?.name || 'User'}
+              email={profile?.email || user?.email || ''}
+              points={totalPoints}
+              role={userRole || 'member'}
+            />
+          </Animated.View>
 
           {userRole === 'owner' && (
-            <Card style={styles.familyCodeCard}>
-              <Text style={styles.familyCodeTitle}>Family Invite Code</Text>
-              <Text style={styles.familyCodeDescription}>
-                Share this code with family members to invite them
-              </Text>
-              
-              {familyCode ? (
-                <>
-                  <View style={styles.codeContainer}>
-                    <Text style={styles.codeText}>{formatFamilyCode(familyCode)}</Text>
-                  </View>
-                  
-                  <TouchableOpacity 
-                    style={styles.shareButton}
-                    onPress={handleShareCode}
-                  >
-                    <Share2 size={20} color={Colors.accent} />
-                    <Text style={styles.shareButtonText}>Share Code</Text>
-                  </TouchableOpacity>
+            <Animated.View style={sectionsAnimatedStyle}>
+              <Card style={styles.familyCodeCard}>
+                <Text style={styles.familyCodeTitle}>Family Invite Code</Text>
+                <Text style={styles.familyCodeDescription}>
+                  Share this code with family members to invite them
+                </Text>
+                
+                {familyCode ? (
+                  <>
+                    <View style={styles.codeContainer}>
+                      <Text style={styles.codeText}>{formatFamilyCode(familyCode)}</Text>
+                    </View>
+                    
+                    <TouchableOpacity 
+                      style={styles.shareButton}
+                      onPress={handleShareCode}
+                    >
+                      <Share2 size={20} color={Colors.accent} />
+                      <Text style={styles.shareButtonText}>Share Code</Text>
+                    </TouchableOpacity>
 
-                  <TouchableOpacity onPress={handleGenerateNewCode} disabled={loadingCode}>
-                    <Text style={styles.generateNewText}>
-                      {loadingCode ? 'Generating...' : 'Generate New Code'}
-                    </Text>
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <>
-                  <View style={styles.codeContainer}>
-                    <Text style={styles.noCodeText}>No code generated yet</Text>
-                  </View>
-                  
-                  <TouchableOpacity 
-                    style={styles.generateButton}
-                    onPress={handleGenerateNewCode}
-                    disabled={loadingCode}
-                  >
-                    <Text style={styles.generateButtonText}>
-                      {loadingCode ? 'Generating...' : 'Generate Invite Code'}
-                    </Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </Card>
+                    <TouchableOpacity onPress={handleGenerateNewCode} disabled={loadingCode}>
+                      <Text style={styles.generateNewText}>
+                        {loadingCode ? 'Generating...' : 'Generate New Code'}
+                      </Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.codeContainer}>
+                      <Text style={styles.noCodeText}>No code generated yet</Text>
+                    </View>
+                    
+                    <TouchableOpacity 
+                      style={styles.generateButton}
+                      onPress={handleGenerateNewCode}
+                      disabled={loadingCode}
+                    >
+                      <Text style={styles.generateButtonText}>
+                        {loadingCode ? 'Generating...' : 'Generate Invite Code'}
+                      </Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </Card>
+            </Animated.View>
           )}
 
-          <SettingsSection title="Goals" items={goalsSettings} />
+          <Animated.View style={sectionsAnimatedStyle}>
+            <SettingsSection title="Goals" items={goalsSettings} />
+          </Animated.View>
 
-          <SettingsSection title="Preferences" items={preferencesSettings} />
+          <Animated.View style={sectionsAnimatedStyle}>
+            <SettingsSection title="Preferences" items={preferencesSettings} />
+          </Animated.View>
 
-          <View style={styles.signOutContainer}>
-            <Button
-              title="Sign Out"
-              onPress={handleSignOut}
-              variant="outline"
-              fullWidth
-            />
-          </View>
+          <Animated.View style={sectionsAnimatedStyle}>
+            <View style={styles.signOutContainer}>
+              <Button
+                title="Sign Out"
+                onPress={handleSignOut}
+                variant="outline"
+                fullWidth
+              />
+            </View>
+          </Animated.View>
         </ScrollView>
       </SafeAreaView>
 
