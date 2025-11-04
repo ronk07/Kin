@@ -10,7 +10,7 @@ A mobile-first React Native app built with Expo, designed to help families stay 
 - npm or yarn
 - Expo CLI (`npm install -g expo-cli`)
 - Supabase account
-- Google Gemini API key
+- OpenAI API key
 
 ### Installation
 
@@ -21,11 +21,11 @@ A mobile-first React Native app built with Expo, designed to help families stay 
 
 2. **Set up environment variables:**
    - Copy `env.example` to `.env.local`
-   - Fill in your Supabase and Gemini API credentials:
+   - Fill in your Supabase and OpenAI API credentials:
      ```
      EXPO_PUBLIC_SUPABASE_URL=your_supabase_project_url
      EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-     EXPO_PUBLIC_GEMINI_API_KEY=your_gemini_api_key
+     EXPO_PUBLIC_OPENAI_API_KEY=your_openai_api_key
      ```
 
 3. **Set up Supabase:**
@@ -49,7 +49,7 @@ A mobile-first React Native app built with Expo, designed to help families stay 
 - Daily scripture/affirmation rotation
 - Streak ring visualization
 - "I Worked Out" check-in button with photo upload
-- AI-powered workout verification (Gemini Vision API)
+- AI-powered workout verification (OpenAI Vision via GPT-4o family)
 - Step counter (placeholder for MVP)
 - Dynamic encouragement messages
 
@@ -88,7 +88,7 @@ A mobile-first React Native app built with Expo, designed to help families stay 
     me.tsx          # Me page
 /lib
   /api
-    gemini.ts       # Gemini Vision API integration
+    openai.ts       # OpenAI Vision integration
   /components       # Reusable UI components
   /hooks           # Custom React hooks
   /supabase
@@ -105,7 +105,7 @@ A mobile-first React Native app built with Expo, designed to help families stay 
 - **Frontend:** React Native (Expo SDK 54)
 - **Navigation:** Expo Router
 - **Backend:** Supabase (Auth, DB, Storage)
-- **AI Vision:** Google Gemini API
+- **AI Vision:** OpenAI ChatGPT (GPT-4o) API
 - **State Management:** React Hooks + Context (to be added)
 - **Styling:** StyleSheet
 
@@ -113,7 +113,7 @@ A mobile-first React Native app built with Expo, designed to help families stay 
 
 - Authentication and onboarding are out of scope for MVP (will be added later)
 - Apple HealthKit integration is placeholder for MVP
-- Photo verification requires Gemini API key
+- Photo verification requires an OpenAI API key
 - Mock user/family IDs are used - replace with actual auth context when implementing authentication
 
 ## 🐛 Known Issues

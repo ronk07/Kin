@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, ScrollView, View, Text, Alert, ActivityIndicator, TouchableOpacity, Share } from 'react-native';
+import { StyleSheet, ScrollView, View, Text, Alert, ActivityIndicator, TouchableOpacity, Share, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Share2 } from 'lucide-react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Container } from '@/lib/components/Container';
 import { ProfileCard } from '@/lib/components/ProfileCard';
 import { SettingsSection } from '@/lib/components/SettingsSection';
@@ -23,7 +24,47 @@ export default function MeScreen() {
   const [familyCode, setFamilyCode] = useState<string | null>(null);
   const [loadingCode, setLoadingCode] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showReminderTimePicker, setShowReminderTimePicker] = useState(false);
   const router = useRouter();
+
+  // Helper function to format reminder time from TIME string (HH:MM:SS) to readable format
+  const formatReminderTime = (timeString: string | null | undefined): string => {
+    if (!timeString) return 'Not set';
+    
+    try {
+      // Parse TIME string (HH:MM:SS format)
+      const [hours, minutes] = timeString.split(':').map(Number);
+      const date = new Date();
+      date.setHours(hours, minutes, 0, 0);
+      
+      return date.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      });
+    } catch (error) {
+      console.error('Error formatting reminder time:', error);
+      return 'Not set';
+    }
+  };
+
+  // Helper function to parse TIME string to Date object
+  const parseReminderTime = (timeString: string | null | undefined): Date => {
+    const defaultDate = new Date();
+    defaultDate.setHours(9, 0, 0, 0); // Default to 9:00 AM
+    
+    if (!timeString) return defaultDate;
+    
+    try {
+      const [hours, minutes] = timeString.split(':').map(Number);
+      const date = new Date();
+      date.setHours(hours, minutes, 0, 0);
+      return date;
+    } catch (error) {
+      console.error('Error parsing reminder time:', error);
+      return defaultDate;
+    }
+  };
 
   useEffect(() => {
     if (!userLoading && !familyLoading && user && familyId) {
@@ -173,7 +214,48 @@ export default function MeScreen() {
   };
 
   const handleReminderPress = () => {
-    Alert.alert('Reminders', 'Reminder time picker coming soon');
+    if (Platform.OS === 'ios') {
+      // iOS: Show DateTimePicker directly
+      setShowReminderTimePicker(true);
+    } else {
+      // Android: Show alert with options
+      Alert.alert(
+        'Reminder Settings',
+        `Current reminder time: ${formatReminderTime(profile?.reminder_time)}\n\nWould you like to change it?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Change Time',
+            onPress: () => setShowReminderTimePicker(true),
+          },
+        ]
+      );
+    }
+  };
+
+  const handleReminderTimeChange = async (event: any, selectedTime?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowReminderTimePicker(false);
+    }
+
+    if (event.type === 'set' && selectedTime) {
+      try {
+        // Convert Date to TIME string format (HH:MM:SS)
+        const hours = selectedTime.getHours().toString().padStart(2, '0');
+        const minutes = selectedTime.getMinutes().toString().padStart(2, '0');
+        const timeString = `${hours}:${minutes}:00`;
+
+        await updatePreferences({ reminder_time: timeString });
+        
+        if (Platform.OS === 'ios') {
+          setShowReminderTimePicker(false);
+        }
+      } catch (error: any) {
+        Alert.alert('Error', error.message || 'Failed to update reminder time');
+      }
+    } else if (event.type === 'dismissed') {
+      setShowReminderTimePicker(false);
+    }
   };
 
   const handleToggleRequireProof = async (value: boolean) => {
@@ -247,17 +329,11 @@ export default function MeScreen() {
       onToggle: handleToggleRequireProof,
     },
     {
-      id: 'privacy',
-      label: 'Private Feed',
-      description: 'Hide your activity from family feed',
-      type: 'toggle' as const,
-      value: profile?.privacy_opt_out ?? false,
-      onToggle: handleTogglePrivateFeed,
-    },
-    {
       id: 'reminders',
       label: 'Reminders',
-      description: 'Set daily check-in times',
+      description: profile?.reminder_enabled 
+        ? `Daily reminder at ${formatReminderTime(profile?.reminder_time)}`
+        : 'Reminders disabled',
       type: 'button' as const,
       onPress: handleReminderPress,
     },
@@ -340,6 +416,17 @@ export default function MeScreen() {
           </View>
         </ScrollView>
       </SafeAreaView>
+
+      {/* Reminder Time Picker */}
+      {showReminderTimePicker && (
+        <DateTimePicker
+          value={parseReminderTime(profile?.reminder_time)}
+          mode="time"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={handleReminderTimeChange}
+          is24Hour={false}
+        />
+      )}
     </Container>
   );
 }

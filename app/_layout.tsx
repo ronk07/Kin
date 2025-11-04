@@ -60,22 +60,38 @@ function RootLayoutNav() {
   const router = useRouter();
 
   useEffect(() => {
+    // Don't route until we know the auth and onboarding status
     if (loading) return;
+    
+    // If user exists but onboarding status is still unknown, wait
+    if (user && onboardingCompleted === null) return;
 
-    const inAuthGroup = segments[0] === 'auth' || segments[0] === 'welcome';
-    const inOnboardingGroup = segments[0] === 'onboarding';
-    const inTabsGroup = segments[0] === '(tabs)';
+    const currentSegment = segments[0];
+    const inAuthGroup = currentSegment === 'auth' || currentSegment === 'welcome';
+    const inOnboardingGroup = currentSegment === 'onboarding';
+    const inTabsGroup = currentSegment === '(tabs)';
 
-    if (!user && !inAuthGroup) {
-      // Redirect to welcome if not authenticated
-      router.replace('/welcome');
-    } else if (user && !onboardingCompleted && !inOnboardingGroup) {
-      // Redirect to onboarding if not completed
-      router.replace('/onboarding/profile');
-    } else if (user && onboardingCompleted && !inTabsGroup) {
-      // Redirect to main app if authenticated and onboarded
-      router.replace('/(tabs)');
+    // If no user, always go to welcome
+    if (!user) {
+      if (!inAuthGroup && currentSegment !== 'welcome') {
+        router.replace('/welcome');
+      }
+      return;
     }
+
+    // User is authenticated - check onboarding status
+    if (onboardingCompleted === false) {
+      // User needs to complete onboarding
+      if (!inOnboardingGroup) {
+        router.replace('/onboarding/profile');
+      }
+    } else if (onboardingCompleted === true) {
+      // User has completed onboarding - go to main app
+      if (!inTabsGroup) {
+        router.replace('/(tabs)');
+      }
+    }
+    // If onboardingCompleted is still null but user exists, wait (handled above)
   }, [user, loading, onboardingCompleted, segments]);
 
   if (loading) {
@@ -88,7 +104,7 @@ function RootLayoutNav() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack screenOptions={{ headerShown: false }}>
+      <Stack initialRouteName="welcome" screenOptions={{ headerShown: false }}>
         <Stack.Screen name="welcome" options={{ headerShown: false }} />
         <Stack.Screen name="auth" options={{ headerShown: false }} />
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />

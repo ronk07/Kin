@@ -1,19 +1,30 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, ScrollView, View, Text, Alert, ActivityIndicator } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Flame } from 'lucide-react-native';
-import * as FileSystem from 'expo-file-system/legacy';
+import { Colors, Spacing, Typography } from '@/constants/theme';
+import { VerificationResponse, verifyTaskImage } from '@/lib/api/openai';
 import { Container } from '@/lib/components/Container';
 import { DailyScripture } from '@/lib/components/DailyScripture';
-import { WeekTracker } from '@/lib/components/WeekTracker';
 import { StepCounter } from '@/lib/components/StepCounter';
 import { TaskCard } from '@/lib/components/TaskCard';
+import { VerificationModal } from '@/lib/components/VerificationModal';
+import { WeekTracker } from '@/lib/components/WeekTracker';
 import { useAuth } from '@/lib/context/AuthContext';
-import { useUser } from '@/lib/context/UserContext';
 import { useFamily } from '@/lib/context/FamilyContext';
+import { useUser } from '@/lib/context/UserContext';
 import { useHealthKit } from '@/lib/hooks/useHealthKit';
 import { supabase } from '@/lib/supabase/client';
-import { Colors, Typography, Spacing } from '@/constants/theme';
+import { calculateStreak, updateStreakInDatabase } from '@/lib/utils/streak';
+import * as FileSystem from 'expo-file-system/legacy';
+import { Flame } from 'lucide-react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+type TaskVerificationDetail = {
+  confidence: number | null;
+  reason: string | null;
+  proofUrl: string | null;
+  verifiedAt: string | null;
+  model: string | null;
+};
 
 export default function HomeScreen() {
   const { user } = useAuth();
@@ -27,6 +38,17 @@ export default function HomeScreen() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedDayTasks, setSelectedDayTasks] = useState<Record<string, boolean>>({});
   const [selectedDaySteps, setSelectedDaySteps] = useState(0);
+  const [todayTaskDetails, setTodayTaskDetails] = useState<Record<string, TaskVerificationDetail>>({});
+  const [selectedDayDetails, setSelectedDayDetails] = useState<Record<string, TaskVerificationDetail>>({});
+  
+  // Verification modal state
+  const [verificationModalVisible, setVerificationModalVisible] = useState(false);
+  const [verificationImageUri, setVerificationImageUri] = useState<string | null>(null);
+  const [verificationTaskName, setVerificationTaskName] = useState<'workout' | 'bible_reading' | null>(null);
+  const [verificationResult, setVerificationResult] = useState<VerificationResponse | null>(null);
+  const [verificationLoading, setVerificationLoading] = useState(false);
+  const [pendingCompletionDate, setPendingCompletionDate] = useState<string | null>(null);
+  const [verificationModalMode, setVerificationModalMode] = useState<'decision' | 'review'>('decision');
 
   useEffect(() => {
     if (!userLoading && !familyLoading && user && familyId) {
@@ -82,29 +104,36 @@ export default function HomeScreen() {
     if (!user || !familyId) return;
 
     try {
-      // Fetch user's current streak from profile
-      const { data: userData } = await supabase
-        .from('users')
-        .select('current_streak')
-        .eq('id', user.id)
-        .single();
-
-      setStreakDays(userData?.current_streak || 0);
+      // Calculate and update streak based on both tasks being completed
+      const streak = await calculateStreak(user.id);
+      await updateStreakInDatabase(user.id);
+      setStreakDays(streak);
 
       // Check today's completions
       const today = new Date().toISOString().split('T')[0];
       const { data: completions } = await supabase
         .from('task_completions')
-        .select('task_name')
+        .select('task_name, proof_url, verification_confidence, verification_reason, verification_model, verified_at')
         .eq('user_id', user.id)
         .eq('completed_date', today)
         .eq('verification_status', 'verified');
 
       const completed: Record<string, boolean> = {};
+      const details: Record<string, TaskVerificationDetail> = {};
       completions?.forEach(c => {
-        completed[c.task_name] = true;
+        if (c.task_name === 'workout' || c.task_name === 'bible_reading') {
+          completed[c.task_name] = true;
+          details[c.task_name] = {
+            confidence: c.verification_confidence ?? null,
+            reason: c.verification_reason ?? null,
+            proofUrl: c.proof_url ?? null,
+            verifiedAt: c.verified_at ?? null,
+            model: c.verification_model ?? null,
+          };
+        }
       });
       setCompletedTasks(completed);
+      setTodayTaskDetails(details);
     } catch (error) {
       console.error('Error fetching user data:', error);
     } finally {
@@ -112,12 +141,13 @@ export default function HomeScreen() {
     }
   };
 
-  const handleMarkIncomplete = async (taskName: 'workout' | 'bible_reading') => {
+  const handleMarkIncomplete = async (taskName: 'workout' | 'bible_reading', dateOverride?: string) => {
     if (!user || !familyId) return;
 
     try {
-      // Use selected date if viewing a different day, otherwise use today
-      const completionDate = selectedDate || new Date().toISOString().split('T')[0];
+      // Use provided date, selected date if viewing a different day, otherwise use today
+      const completionDate = dateOverride || selectedDate || new Date().toISOString().split('T')[0];
+      const todayDate = new Date().toISOString().split('T')[0];
       
       // Delete task completion for the selected date
       const { error: deleteError } = await supabase
@@ -171,15 +201,26 @@ export default function HomeScreen() {
 
       setCompletedTasks(prev => {
         const updated = { ...prev };
+        if (!dateOverride && !selectedDate) {
+          delete updated[taskName];
+        }
+        return updated;
+      });
+      setTodayTaskDetails(prev => {
+        if (completionDate !== todayDate) return prev;
+        const updated = { ...prev };
         delete updated[taskName];
         return updated;
       });
-      
-      // Update selected day tasks if viewing a specific day
-      if (selectedDate) {
+      if (selectedDate || dateOverride) {
         setSelectedDayTasks(prev => {
           const updated = { ...prev };
           updated[taskName] = false;
+          return updated;
+        });
+        setSelectedDayDetails(prev => {
+          const updated = { ...prev };
+          delete updated[taskName];
           return updated;
         });
       }
@@ -197,13 +238,143 @@ export default function HomeScreen() {
   const handleTaskVerify = async (taskName: 'workout' | 'bible_reading', imageUri?: string) => {
     if (!user || !familyId) return;
 
-    // Check if marking a task for a past day
     const completionDate = selectedDate || new Date().toISOString().split('T')[0];
     const today = new Date().toISOString().split('T')[0];
     
-    if (completionDate < today) {
-      // Show confirmation for past day
-      return new Promise<void>((resolve) => {
+    // If no image provided, complete immediately without verification
+    if (!imageUri) {
+      const manualVerification: VerificationResponse = {
+        isVerified: true,
+        confidence: 1,
+        reason: 'Marked complete without photo verification',
+        model: 'manual',
+      };
+      if (completionDate < today) {
+        // Show confirmation for past day
+        return new Promise<void>((resolve) => {
+          Alert.alert(
+            'Mark Past Task Complete',
+            'You are marking a task from the past as complete. Are you sure you want to do this?',
+            [
+              {
+                text: 'Cancel',
+                style: 'cancel',
+                onPress: () => resolve(),
+              },
+              {
+                text: 'Yes, Mark Complete',
+                onPress: async () => {
+                  await performTaskVerification(taskName, undefined, completionDate, manualVerification);
+                  resolve();
+                },
+              },
+            ]
+          );
+        });
+      }
+      await performTaskVerification(taskName, undefined, completionDate, manualVerification);
+      return;
+    }
+
+    // If image is provided, verify with OpenAI first
+    setVerificationImageUri(imageUri);
+    setVerificationTaskName(taskName);
+    setPendingCompletionDate(completionDate);
+    setVerificationResult(null);
+    setVerificationLoading(true);
+    setVerificationModalMode('decision');
+    setVerificationModalVisible(true);
+
+    try {
+      const result = await verifyTaskImage(imageUri, taskName);
+      setVerificationResult(result);
+    } catch (error: any) {
+      console.error('Error verifying image:', error);
+      const fallbackVerification: VerificationResponse = {
+        isVerified: true,
+        confidence: 0,
+        reason: 'User bypassed AI verification',
+        model: 'manual-override',
+      };
+      Alert.alert(
+        'Verification Error',
+        error.message || 'Failed to verify image. Would you like to continue anyway?',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+            onPress: () => {
+              setVerificationModalVisible(false);
+              setVerificationLoading(false);
+              resetVerificationState();
+            },
+          },
+          {
+            text: 'Continue Anyway',
+            onPress: () => {
+              setVerificationModalVisible(false);
+              setVerificationLoading(false);
+              resetVerificationState();
+
+              const proceed = async () => {
+                await performTaskVerification(taskName, imageUri, completionDate, fallbackVerification);
+              };
+
+              if (completionDate < today) {
+                Alert.alert(
+                  'Mark Past Task Complete',
+                  'You are marking a task from the past as complete. Are you sure you want to do this?',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Yes, Mark Complete',
+                      onPress: () => {
+                        void proceed();
+                      },
+                    },
+                  ]
+                );
+              } else {
+                void proceed();
+              }
+            },
+          },
+        ]
+      );
+    } finally {
+      setVerificationLoading(false);
+    }
+  };
+
+  const handleAcceptVerification = async () => {
+    if (!verificationTaskName) {
+      setVerificationModalVisible(false);
+      resetVerificationState();
+      return;
+    }
+
+    if (verificationModalMode === 'decision') {
+      if (!pendingCompletionDate) {
+        setVerificationModalVisible(false);
+        resetVerificationState();
+        return;
+      }
+
+      setVerificationModalVisible(false);
+      const completionDate = pendingCompletionDate;
+      const today = new Date().toISOString().split('T')[0];
+
+      const execute = async () => {
+        await performTaskVerification(
+          verificationTaskName,
+          verificationImageUri || undefined,
+          completionDate,
+          verificationResult || undefined
+        );
+        resetVerificationState();
+      };
+
+      if (completionDate < today) {
         Alert.alert(
           'Mark Past Task Complete',
           'You are marking a task from the past as complete. Are you sure you want to do this?',
@@ -211,32 +382,94 @@ export default function HomeScreen() {
             {
               text: 'Cancel',
               style: 'cancel',
-              onPress: () => resolve(),
+              onPress: () => resetVerificationState(),
             },
             {
               text: 'Yes, Mark Complete',
               onPress: async () => {
-                await performTaskVerification(taskName, imageUri, completionDate);
-                resolve();
+                await execute();
               },
             },
           ]
         );
-      });
+      } else {
+        await execute();
+      }
+    } else {
+      // Review mode primary action just closes the modal
+      setVerificationModalVisible(false);
+      resetVerificationState();
+    }
+  };
+
+  const handleRejectVerification = () => {
+    if (verificationModalMode === 'decision') {
+      setVerificationModalVisible(false);
+      resetVerificationState();
+      return;
     }
 
-    // Proceed normally for today or future dates
-    await performTaskVerification(taskName, imageUri, completionDate);
+    if (!verificationTaskName) {
+      setVerificationModalVisible(false);
+      resetVerificationState();
+      return;
+    }
+
+    const completionDate = pendingCompletionDate || selectedDate || new Date().toISOString().split('T')[0];
+
+    Alert.alert(
+      'Mark Incomplete',
+      'Are you sure you want to mark this task as incomplete?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Yes, Mark Incomplete',
+          style: 'destructive',
+          onPress: async () => {
+            setVerificationModalVisible(false);
+            await handleMarkIncomplete(verificationTaskName, completionDate);
+            resetVerificationState();
+          },
+        },
+      ]
+    );
+  };
+
+  const resetVerificationState = () => {
+    setVerificationImageUri(null);
+    setVerificationTaskName(null);
+    setVerificationResult(null);
+    setVerificationLoading(false);
+    setPendingCompletionDate(null);
+    setVerificationModalMode('decision');
   };
 
   const performTaskVerification = async (
     taskName: 'workout' | 'bible_reading', 
     imageUri?: string,
-    completionDate?: string
+    completionDate?: string,
+    verificationResultOverride?: VerificationResponse
   ) => {
     if (!user || !familyId) return;
 
     const dateToUse = completionDate || selectedDate || new Date().toISOString().split('T')[0];
+    const todayDate = new Date().toISOString().split('T')[0];
+    const verificationInfo: VerificationResponse = verificationResultOverride ?? (
+      imageUri
+        ? {
+            isVerified: true,
+            confidence: 0,
+            reason: 'Verification details unavailable',
+            model: 'unknown',
+          }
+        : {
+            isVerified: true,
+            confidence: 1,
+            reason: 'Marked complete without photo verification',
+            model: 'manual',
+          }
+    );
+    const isVerified = verificationInfo.isVerified !== false;
 
     try {
       let proofUrl: string | null = null;
@@ -261,7 +494,7 @@ export default function HomeScreen() {
         const byteArray = new Uint8Array(byteNumbers);
 
         // Upload to Supabase Storage
-        const { data: uploadData, error: uploadError } = await supabase.storage
+        const { error: uploadError } = await supabase.storage
           .from('workout-photos')
           .upload(fileName, byteArray, {
             contentType: `image/${fileExt}`,
@@ -286,31 +519,47 @@ export default function HomeScreen() {
           family_id: familyId,
           completed_date: dateToUse,
           proof_url: proofUrl,
-          verification_status: 'verified',
-          verified_at: new Date().toISOString(),
+          verification_status: isVerified ? 'verified' : 'rejected',
+          verification_confidence: verificationInfo.confidence ?? null,
+          verification_reason: verificationInfo.reason ?? null,
+          verification_model: verificationInfo.model ?? null,
+          verified_at: isVerified ? new Date().toISOString() : null,
         });
 
       if (completionError) throw completionError;
 
-      // Award points
-      await supabase
-        .from('points')
-        .insert({
-          user_id: user.id,
-          family_id: familyId,
-          points: 10,
-          source: `${taskName} completion`,
-        });
-
-      setCompletedTasks(prev => ({ ...prev, [taskName]: true }));
-      
-      // Update selected day tasks if viewing a specific day
-      if (selectedDate) {
-        setSelectedDayTasks(prev => ({ ...prev, [taskName]: true }));
+      // Award points when verified
+      if (isVerified) {
+        await supabase
+          .from('points')
+          .insert({
+            user_id: user.id,
+            family_id: familyId,
+            points: 10,
+            source: `${taskName} completion`,
+          });
       }
-      
+
+      const detail: TaskVerificationDetail = {
+        confidence: verificationInfo.confidence ?? null,
+        reason: verificationInfo.reason ?? null,
+        proofUrl,
+        verifiedAt: isVerified ? new Date().toISOString() : null,
+        model: verificationInfo.model ?? null,
+      };
+
+      if (isVerified && dateToUse === todayDate) {
+        setCompletedTasks(prev => ({ ...prev, [taskName]: true }));
+        setTodayTaskDetails(prev => ({ ...prev, [taskName]: detail }));
+      }
+
+      if (isVerified && selectedDate === dateToUse) {
+        setSelectedDayTasks(prev => ({ ...prev, [taskName]: true }));
+        setSelectedDayDetails(prev => ({ ...prev, [taskName]: detail }));
+      }
+
       await fetchUserData();
-      
+
       // Refresh week completions to update circle indicators
       await fetchWeekCompletions();
     } catch (error: any) {
@@ -391,17 +640,32 @@ export default function HomeScreen() {
       // Fetch tasks completed on this date
       const { data: tasksData } = await supabase
         .from('task_completions')
-        .select('task_name')
+        .select('task_name, proof_url, verification_confidence, verification_reason, verification_model, verified_at')
         .eq('user_id', user.id)
         .eq('completed_date', date)
         .eq('verification_status', 'verified');
 
       const tasks: Record<string, boolean> = {
-        workout: tasksData?.some(t => t.task_name === 'workout') || false,
-        bible_reading: tasksData?.some(t => t.task_name === 'bible_reading') || false,
+        workout: false,
+        bible_reading: false,
       };
+      const details: Record<string, TaskVerificationDetail> = {};
+
+      tasksData?.forEach((record) => {
+        if (record.task_name === 'workout' || record.task_name === 'bible_reading') {
+          tasks[record.task_name] = true;
+          details[record.task_name] = {
+            confidence: record.verification_confidence ?? null,
+            reason: record.verification_reason ?? null,
+            proofUrl: record.proof_url ?? null,
+            verifiedAt: record.verified_at ?? null,
+            model: record.verification_model ?? null,
+          };
+        }
+      });
 
       setSelectedDayTasks(tasks);
+      setSelectedDayDetails(details);
 
       // Fetch steps for this date
       const today = new Date().toISOString().split('T')[0];
@@ -423,12 +687,37 @@ export default function HomeScreen() {
       console.error('Error fetching daily details:', error);
       setSelectedDaySteps(0);
       setSelectedDayTasks({});
+      setSelectedDayDetails({});
     }
   };
 
   const handleDayPress = async (date: string) => {
     setSelectedDate(date);
     await fetchDailyDetails(date);
+  };
+  
+  const openVerificationReview = (taskName: 'workout' | 'bible_reading') => {
+    const dateForDetails = selectedDate || new Date().toISOString().split('T')[0];
+    const detailSource = selectedDate ? selectedDayDetails : todayTaskDetails;
+    const detail = detailSource[taskName];
+
+    if (!detail) {
+      Alert.alert('No Verification Data', 'This task does not have AI verification details yet.');
+      return;
+    }
+
+    setVerificationTaskName(taskName);
+    setVerificationImageUri(detail.proofUrl || null);
+    setVerificationResult({
+      isVerified: true,
+      confidence: detail.confidence ?? 0,
+      reason: detail.reason ?? 'No reasoning provided',
+      model: detail.model ?? undefined,
+    });
+    setVerificationLoading(false);
+    setPendingCompletionDate(dateForDetails);
+    setVerificationModalMode('review');
+    setVerificationModalVisible(true);
   };
   
   const getWeekData = () => {
@@ -536,10 +825,17 @@ export default function HomeScreen() {
             </View>
           ) : (
             tasks.map((task) => {
+              const taskKey = (task.name === 'workout' || task.name === 'bible_reading')
+                ? task.name
+                : null;
+              if (!taskKey) {
+                return null;
+              }
+
               // Show completion status for selected day, or today if no day selected
               const taskCompleted = selectedDate 
-                ? selectedDayTasks[task.name] || false
-                : completedTasks[task.name] || false;
+                ? selectedDayTasks[taskKey] || false
+                : completedTasks[taskKey] || false;
               
               return (
                 <TaskCard
@@ -547,14 +843,29 @@ export default function HomeScreen() {
                   title={task.title}
                   subtitle={task.subtitle}
                   verified={taskCompleted}
-                  onVerify={(imageUri) => handleTaskVerify(task.name, imageUri)}
-                  onMarkIncomplete={() => handleMarkIncomplete(task.name)}
+                  onVerify={(imageUri) => handleTaskVerify(taskKey, imageUri)}
+                  onViewDetails={() => openVerificationReview(taskKey)}
                 />
               );
             })
           )}
         </ScrollView>
       </SafeAreaView>
+      
+      {/* Verification Modal */}
+      {verificationModalVisible && verificationTaskName && (
+        <VerificationModal
+          visible={verificationModalVisible}
+          imageUri={verificationImageUri}
+          taskName={verificationTaskName === 'workout' ? 'Workout' : 'Read Bible'}
+          verificationResult={verificationResult}
+          loading={verificationLoading}
+          onAccept={handleAcceptVerification}
+          onReject={handleRejectVerification}
+          primaryButtonLabel={verificationModalMode === 'decision' ? 'Accept' : 'Close'}
+          secondaryButtonLabel={verificationModalMode === 'decision' ? 'Reject' : 'Mark Incomplete'}
+        />
+      )}
     </Container>
   );
 }

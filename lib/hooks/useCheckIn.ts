@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase/client';
-import { verifyWorkoutImage } from '@/lib/api/gemini';
+import { verifyWorkoutImage } from '@/lib/api/openai';
 import { Alert } from 'react-native';
 
 interface UseCheckInProps {
@@ -124,11 +124,11 @@ export function useCheckIn({ userId, familyId }: UseCheckInProps = {}) {
 
       const proofUrl = urlData.publicUrl;
 
-      // Verify with Gemini
+      // Verify with OpenAI
       const verification = await verifyWorkoutImage(imageUri);
 
       const today = new Date().toISOString().split('T')[0];
-      const verificationStatus = verification.isWorkout && verification.confidence > 0.8 
+      const verificationStatus = verification.isVerified && verification.confidence > 0.8 
         ? 'verified' 
         : 'rejected';
 
@@ -141,6 +141,9 @@ export function useCheckIn({ userId, familyId }: UseCheckInProps = {}) {
           date: today,
           proof_url: proofUrl,
           verification_status: verificationStatus,
+          verification_confidence: verification.confidence ?? null,
+          verification_reason: verification.reason ?? null,
+          verification_model: verification.model ?? null,
           verified_at: verificationStatus === 'verified' ? new Date().toISOString() : null,
         }, {
           onConflict: 'user_id,date',
@@ -159,7 +162,7 @@ export function useCheckIn({ userId, familyId }: UseCheckInProps = {}) {
 
         Alert.alert(
           'Success! 🎉',
-          `Workout verified! +10 points. Your streak is now ${streakDays + 1} days.`,
+          `Workout verified! +10 points.\nConfidence: ${(verification.confidence * 100).toFixed(0)}%\nReason: ${verification.reason}`,
           [{ text: 'OK' }]
         );
 
@@ -168,7 +171,7 @@ export function useCheckIn({ userId, familyId }: UseCheckInProps = {}) {
       } else {
         Alert.alert(
           'Verification Failed',
-          'The image could not be verified as a workout. Please try again with a clearer photo.',
+          `The image could not be verified as a workout.\nConfidence: ${(verification.confidence * 100).toFixed(0)}%\nReason: ${verification.reason}`,
           [{ text: 'OK' }]
         );
       }

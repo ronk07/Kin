@@ -1,0 +1,162 @@
+# Kin — Family Faith & Fitness Tracker App
+
+## 🧭 Overview
+
+Build a **mobile-first app** called **Kin**, a **Christian-inspired family wellness & workout accountability platform** designed to help families stay consistent, spiritually grounded, and physically active.
+The app encourages daily discipline and community support through **streaks**, **points**, **photo proof**, and **faith-based motivation** — all wrapped in a calm, earth-tone aesthetic.
+
+---
+
+## 🎨 **Brand Identity & Visual Style**
+
+**Theme:** grounded, peaceful, purposeful — representing balance between faith, body, and family.
+
+**Color Palette:**
+
+* **Dark Brown (#3B2F2F)** — grounding, strength, faith
+* **Beige (#F5E9D5)** — simplicity, warmth, minimalism
+* **Sage Green (#A3B18A)** — growth, renewal, health
+* **Burnt Orange (#E07A5F)** — energy, motivation, vibrance
+
+**Typography:**
+
+* Headings: *Playfair Display* (serif, elegant, spiritual tone)
+* Body: *Inter* (clean and readable)
+
+**UI Style:**
+
+* Rounded corners (xl–2xl), soft drop shadows
+* Minimal clutter, 1 primary CTA per page
+* Background gradient (sage → beige)
+* Iconography: subtle line icons (Lucide, Feather)
+
+---
+
+## 📱 **App Structure (3 Pages Max in Navbar)**
+
+### 1️⃣ **Home (Dashboard / Today Tab)**
+
+**Purpose:** quick check-in, motivation, and progress snapshot
+
+**Sections:**
+
+* **Daily Scripture or Affirmation** (API or static JSON rotation)
+
+  > “Whatever you do, work at it with all your heart.” – Colossians 3:23
+* **Streak Ring** — visual ring showing days in a row
+* **Check-In Button:** large, central “I Worked Out” button
+
+  * Tap → camera opens → upload photo proof
+  * AI (OpenAI Vision) validates gym/workout context
+  * On verify → +10 points, streak +1
+* **Step Counter:** pull data from Apple Health API
+* **Encouragement Text:**
+
+  * If missed a day → “Your strength is renewed each morning.”
+  * If streak active → “Keep going strong — the family’s cheering you on!”
+
+---
+
+### 2️⃣ **Family (Community / Leaderboard)**
+
+**Purpose:** family accountability and motivation
+
+**Features:**
+
+* **Family Summary Cards:** shows each member’s streaks + points
+* **Leaderboard:** weekly points and badges
+* **Feed:** simple text-only feed —
+
+  > “Dad reached his 10-day streak!”
+  > “Ron hit 10k steps today!”
+* **Add Member Button:** invite via link or code
+
+**Gamification Logic:**
+
+* Workout logged = +10 pts
+* Weekly goal achieved = +20 pts
+* Perfect week = +30 pts
+* Step goal achieved = +5 pts
+* Weekly “Family Challenge” goal (e.g., 25 workouts combined)
+
+---
+
+### 3️⃣ **Me (Profile & Settings)**
+
+**Purpose:** manage account, goals, and reminders
+
+**Sections:**
+
+* **Profile Card:** avatar, display name, points, family role
+* **Goals:** weekly frequency (e.g., 5 workouts/week) + step goal (e.g., 10k/day)
+* **Reminders:** set push times for daily check-in
+* **Photo Proof Toggle:** require proof for streaks (on/off)
+* **Privacy Settings:** opt out of public feed
+* **Sign Out Button**
+
+---
+
+## 🧱 **Architecture & Tech Stack**
+
+* **Frontend:** React Native (Expo). Please ensure we build everything in a compatible version that you know how to build.
+* **Backend:** Supabase (Auth, DB, Storage, Edge Functions)
+* **AI Vision:** OpenAI API for photo verification (gym/workout context)
+* **Health Data:** Apple HealthKit integration for daily step count
+* **Notifications:** Expo Notifications for streak reminders
+* **Storage:** Supabase buckets for photo proofs (private access)
+
+---
+
+## 🗂 **Core Database Tables**
+
+* `users` → id, name, email, avatar_url
+* `families` → id, name, owner_id
+* `family_members` → family_id, user_id, role
+* `checkins` → id, user_id, family_id, date, proof_url, verification_status
+* `points` → id, user_id, family_id, points, source
+* `badges` → id, code, name, description
+
+---
+
+## ⚙️ **AI Vision Verification Flow (OpenAI)**
+
+1. User submits workout photo → upload to Supabase Storage
+2. Serverless Edge Function sends image to OpenAI
+3. OpenAI returns JSON: `{ isVerified: true, confidence: 0.93 }`
+4. If `isVerified=true && confidence>0.8` → mark verified ✅
+5. Award points, update streak, trigger confetti animation 🎉
+
+Prompt Example:
+
+```
+You are verifying whether a photo shows a person working out or in a gym/fitness setting.
+Return JSON: { "isVerified": true/false, "confidence": 0–1, "reason": "string" }.
+```
+
+---
+
+## 🔔 **Reminders & Notifications**
+
+* Daily: “Don’t break your streak! Stay grounded, stay strong ⚓️”
+* Weekly Summary: “Your family completed 85% of their goals this week — praise and progress!”
+* Verse Push: short scripture drop mid-week
+
+---
+
+## 🧭 **Navigation Tabs (Bottom Navbar)**
+
+| Icon     | Label  | Route     |
+| -------- | ------ | --------- |
+| 🏠       | Home   | `/home`   |
+| 👨‍👩‍👧 | Family | `/family` |
+| ⚙️       | Me     | `/me`     |
+
+---
+
+## 🧩 **Stretch Goals (Future Updates)**
+
+* **Challenge Mode:** family sets joint goals (e.g., 50 workouts this month)
+* **Achievements:** badges like “Early Riser,” “Faith in Action,” etc.
+* **Bible Verse API Integration:** rotating daily verse
+* **AI Coach Summaries:** “You’re most consistent on Tuesdays!”
+* **Dark Mode:** deep brown + beige combo

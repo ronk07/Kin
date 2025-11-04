@@ -17,15 +17,20 @@ export default function ProfileSetupScreen() {
   const [saving, setSaving] = useState(false);
   
   const { user } = useAuth();
-  const { profile } = useUser();
+  const { profile, loading: userLoading } = useUser();
   const router = useRouter();
 
   useEffect(() => {
-    if (profile) {
-      setName(profile.name || '');
+    if (userLoading) {
+      setLoading(true);
+    } else {
+      // Once UserContext has finished loading (even if profile is null), allow user to proceed
+      if (profile) {
+        setName(profile.name || '');
+      }
       setLoading(false);
     }
-  }, [profile]);
+  }, [profile, userLoading]);
 
   const handleContinue = async () => {
     if (!name.trim()) {
@@ -41,15 +46,50 @@ export default function ProfileSetupScreen() {
     setSaving(true);
 
     try {
-      // Update user's profile with name, age, and gender
-      const updates: any = { name: name.trim() };
-      if (age) updates.age = parseInt(age);
-      if (gender) updates.gender = gender;
+      // First, check if a user record exists with the auth user ID
+      const { data: existingUserById } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', user.id)
+        .maybeSingle();
 
+      // Also check if a user exists with this email but different ID
+      const { data: existingUserByEmail } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', user.email || '')
+        .maybeSingle();
+
+      // If user exists with same email but different ID, delete the old record
+      if (existingUserByEmail && existingUserByEmail.id !== user.id) {
+        console.log('User exists with different ID, deleting old record...');
+        const { error: deleteError } = await supabase
+          .from('users')
+          .delete()
+          .eq('id', existingUserByEmail.id);
+        
+        if (deleteError) {
+          console.error('Error deleting old user record:', deleteError);
+          // Continue anyway - try to create/update with auth user ID
+        }
+      }
+
+      // Now create or update user record with auth user ID
+      const userData: any = {
+        id: user.id,
+        email: user.email || '',
+        name: name.trim(),
+      };
+      if (age) userData.age = parseInt(age);
+      if (gender) userData.gender = gender;
+
+      // Use upsert to create or update
       const { error } = await supabase
         .from('users')
-        .update(updates)
-        .eq('id', user.id);
+        .upsert(userData, {
+          onConflict: 'id',
+          ignoreDuplicates: false,
+        });
 
       if (error) throw error;
 

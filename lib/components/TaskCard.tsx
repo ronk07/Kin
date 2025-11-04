@@ -10,10 +10,10 @@ interface TaskCardProps {
   subtitle?: string;
   verified: boolean;
   onVerify: (imageUri?: string) => Promise<void>;
-  onMarkIncomplete?: () => Promise<void>;
+  onViewDetails?: () => void;
 }
 
-export function TaskCard({ title, subtitle, verified, onVerify, onMarkIncomplete }: TaskCardProps) {
+export function TaskCard({ title, subtitle, verified, onVerify, onViewDetails }: TaskCardProps) {
   const [loading, setLoading] = useState(false);
 
   const requestPermissions = async () => {
@@ -111,53 +111,50 @@ export function TaskCard({ title, subtitle, verified, onVerify, onMarkIncomplete
     }
   };
 
+  const renderContent = () => (
+    <>
+      <View style={styles.textSection}>
+        <Text style={styles.title}>{title}</Text>
+        {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+      </View>
+
+      {verified ? (
+        <TouchableOpacity 
+          style={styles.verifiedBadge}
+          onPress={onViewDetails}
+          disabled={loading}
+        >
+          <Check size={16} color={Colors.beige} />
+          <Text style={styles.verifiedText}>Verified</Text>
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity 
+          style={styles.verifyButton}
+          onPress={handleVerifyPress}
+          disabled={loading}
+        >
+          <Text style={styles.verifyText}>Complete</Text>
+        </TouchableOpacity>
+      )}
+    </>
+  );
+
   return (
     <Card style={styles.card}>
-      <View style={styles.content}>
-        <View style={styles.textSection}>
-          <Text style={styles.title}>{title}</Text>
-          {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+      {verified && onViewDetails ? (
+        <TouchableOpacity
+          style={styles.content}
+          onPress={onViewDetails}
+          activeOpacity={0.85}
+          disabled={loading}
+        >
+          {renderContent()}
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.content}>
+          {renderContent()}
         </View>
-
-        {verified ? (
-          <TouchableOpacity 
-            style={styles.verifiedBadge}
-            onPress={async () => {
-              if (onMarkIncomplete) {
-                Alert.alert(
-                  'Mark Incomplete',
-                  'Are you sure you want to mark this task as incomplete?',
-                  [
-                    {
-                      text: 'Cancel',
-                      style: 'cancel',
-                    },
-                    {
-                      text: 'Mark Incomplete',
-                      style: 'destructive',
-                      onPress: async () => {
-                        await onMarkIncomplete();
-                      },
-                    },
-                  ]
-                );
-              }
-            }}
-            disabled={loading || !onMarkIncomplete}
-          >
-            <Check size={16} color={Colors.beige} />
-            <Text style={styles.verifiedText}>Verified</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity 
-            style={styles.verifyButton}
-            onPress={handleVerifyPress}
-            disabled={loading}
-          >
-            <Text style={styles.verifyText}>Complete</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      )}
     </Card>
   );
 }

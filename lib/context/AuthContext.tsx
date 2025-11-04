@@ -6,7 +6,7 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  onboardingCompleted: boolean;
+  onboardingCompleted: boolean | null;
   signUp: (email: string, password: string, name: string) => Promise<{ error: any }>;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
@@ -19,7 +19,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const [onboardingCompleted, setOnboardingCompleted] = useState(false);
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
 
   useEffect(() => {
     // Get initial session
@@ -29,6 +29,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (session?.user) {
         checkOnboardingStatus(session.user.id);
       } else {
+        setOnboardingCompleted(false);
         setLoading(false);
       }
     });
@@ -38,6 +39,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
+        setOnboardingCompleted(null); // Reset to unknown while checking
+        setLoading(true); // Set loading while checking status
         checkOnboardingStatus(session.user.id);
       } else {
         setOnboardingCompleted(false);
@@ -54,13 +57,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .from('users')
         .select('onboarding_completed')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
 
-      if (error) {
+      if (error && error.code !== 'PGRST116') {
         console.error('Error checking onboarding status:', error);
         setOnboardingCompleted(false);
+      } else if (data) {
+        setOnboardingCompleted(data.onboarding_completed || false);
       } else {
-        setOnboardingCompleted(data?.onboarding_completed || false);
+        // User doesn't exist in users table - try to create a basic record
+        // This can happen if user was deleted or if there was an issue during sign-up
+        console.log('User record not found, attempting to create basic user record...');
+        
+        // Get user email from auth metadata
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (authUser) {
+          const { error: insertError } = await supabase
+            .from('users')
+            .insert({
+              id: userId,
+              email: authUser.email || '',
+              name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'User',
+            });
+
+          if (insertError) {
+            // If insert fails due to duplicate email, try to fetch by email instead
+            if (insertError.code === '23505') {
+              console.log('Email already exists, fetching user by email...');
+              const { data: existingUser } = await supabase
+                .from('users')
+                .select('onboarding_completed, id')
+                .eq('email', authUser.email || '')
+                .maybeSingle();
+              
+              if (existingUser) {
+                // Use the existing user's onboarding status
+                // Note: If IDs don't match, the onboarding flow will handle creating/updating the record
+                setOnboardingCompleted(existingUser.onboarding_completed || false);
+              } else {
+                // User exists but we can't fetch it - treat as needs onboarding
+                setOnboardingCompleted(false);
+              }
+            } else {
+              console.error('Error creating user record:', insertError);
+              // If we can't create the record, sign them out
+              await supabase.auth.signOut();
+              setOnboardingCompleted(false);
+            }
+          } else {
+            // New user record created, they need onboarding
+            setOnboardingCompleted(false);
+          }
+        } else {
+          // Can't get user info, sign out
+          await supabase.auth.signOut();
+          setOnboardingCompleted(false);
+        }
       }
     } catch (error) {
       console.error('Error in checkOnboardingStatus:', error);

@@ -25,9 +25,9 @@ export interface Database {
           current_streak: number;
           // Task configuration
           workout_task_enabled: boolean;
-          workout_task_subtitle: string;
+          workout_task_subtitle: string | null;
           bible_task_enabled: boolean;
-          bible_task_subtitle: string;
+          bible_task_subtitle: string | null;
           // Timestamps
           created_at: string;
           updated_at: string;
@@ -126,6 +126,9 @@ export interface Database {
           proof_url: string | null;
           verification_status: 'pending' | 'verified' | 'rejected';
           verified_at: string | null;
+          verification_confidence: number | null;
+          verification_reason: string | null;
+          verification_model: string | null;
           created_at: string;
         };
         Insert: {
@@ -137,6 +140,9 @@ export interface Database {
           proof_url?: string | null;
           verification_status?: 'pending' | 'verified' | 'rejected';
           verified_at?: string | null;
+          verification_confidence?: number | null;
+          verification_reason?: string | null;
+          verification_model?: string | null;
           created_at?: string;
         };
         Update: {
@@ -148,6 +154,9 @@ export interface Database {
           proof_url?: string | null;
           verification_status?: 'pending' | 'verified' | 'rejected';
           verified_at?: string | null;
+          verification_confidence?: number | null;
+          verification_reason?: string | null;
+          verification_model?: string | null;
         };
       };
       points: {
@@ -218,6 +227,9 @@ export interface Database {
           proof_url: string | null;
           verification_status: 'pending' | 'verified' | 'rejected';
           verified_at: string | null;
+          verification_confidence: number | null;
+          verification_reason: string | null;
+          verification_model: string | null;
           created_at: string;
         };
         Insert: {
@@ -228,6 +240,9 @@ export interface Database {
           proof_url?: string | null;
           verification_status?: 'pending' | 'verified' | 'rejected';
           verified_at?: string | null;
+          verification_confidence?: number | null;
+          verification_reason?: string | null;
+          verification_model?: string | null;
           created_at?: string;
         };
         Update: {
@@ -238,6 +253,9 @@ export interface Database {
           proof_url?: string | null;
           verification_status?: 'pending' | 'verified' | 'rejected';
           verified_at?: string | null;
+          verification_confidence?: number | null;
+          verification_reason?: string | null;
+          verification_model?: string | null;
         };
       };
       daily_steps: {

@@ -1,10 +1,10 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Colors, Spacing, Typography } from '@/constants/theme';
 import { Button } from '@/lib/components/Button';
-import { Colors, Typography, Spacing } from '@/constants/theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import React from 'react';
+import { Image, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -20,6 +20,11 @@ export default function WelcomeScreen() {
         <View style={styles.content}>
           {/* Logo/App Name */}
           <View style={styles.header}>
+            <Image 
+              source={require('../assets/images/KinLogo.png')} 
+              style={styles.logo}
+              resizeMode="contain"
+            />
             <Text style={styles.appName}>Kin</Text>
             <Text style={styles.tagline}>Faith, Family, Fitness</Text>
           </View>
@@ -27,7 +32,7 @@ export default function WelcomeScreen() {
           {/* Call to Action */}
           <View style={styles.footer}>
             <Text style={styles.welcomeText}>
-              Welcome to your family's fitness and faith journey
+              Welcome to your family's accountability hub
             </Text>
             <Button
               title="Get Started"
@@ -59,6 +64,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  logo: {
+    width: 200,
+    height: 200,
+    marginBottom: Spacing.lg,
   },
   appName: {
     fontSize: 64,

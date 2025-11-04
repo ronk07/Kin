@@ -46,38 +46,48 @@ export function UserProvider({ children }: { children: ReactNode }) {
         .from('users')
         .select('*')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
 
-      if (error) throw error;
+      if (error && error.code !== 'PGRST116') {
+        throw error;
+      }
 
-      setProfile(data);
-      
-      // Build tasks from user profile
-      const userTasks: Task[] = [];
-      
-      if (data.workout_task_enabled) {
-        userTasks.push({
-          id: 'workout',
-          name: 'workout',
-          title: 'Workout',
-          subtitle: data.workout_task_subtitle || '',
-          enabled: true,
-        });
+      if (data) {
+        setProfile(data);
+        
+        // Build tasks from user profile
+        const userTasks: Task[] = [];
+        
+        if (data.workout_task_enabled) {
+          userTasks.push({
+            id: 'workout',
+            name: 'workout',
+            title: 'Workout',
+            subtitle: data.workout_task_subtitle || '',
+            enabled: true,
+          });
+        }
+        
+        if (data.bible_task_enabled) {
+          userTasks.push({
+            id: 'bible_reading',
+            name: 'bible_reading',
+            title: 'Read Bible',
+            subtitle: data.bible_task_subtitle || '',
+            enabled: true,
+          });
+        }
+        
+        setTasks(userTasks);
+      } else {
+        // User doesn't exist in users table yet
+        setProfile(null);
+        setTasks([]);
       }
-      
-      if (data.bible_task_enabled) {
-        userTasks.push({
-          id: 'bible_reading',
-          name: 'bible_reading',
-          title: 'Read Bible',
-          subtitle: data.bible_task_subtitle || '',
-          enabled: true,
-        });
-      }
-      
-      setTasks(userTasks);
     } catch (error) {
       console.error('Error fetching user profile:', error);
+      setProfile(null);
+      setTasks([]);
     } finally {
       setLoading(false);
     }

@@ -57,10 +57,21 @@ export default function AuthScreen() {
         if (error) {
           Alert.alert('Signup Failed', error.message || 'Failed to create account');
         } else {
+          // Successfully signed up - switch to login screen
           Alert.alert(
             'Success',
-            'Account created! Please check your email to verify your account.',
-            [{ text: 'OK' }]
+            'Account created! Please sign in to continue.',
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  setIsLogin(true);
+                  setName('');
+                  setPassword('');
+                  // Keep email filled for convenience
+                }
+              }
+            ]
           );
         }
       }

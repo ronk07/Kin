@@ -62,11 +62,13 @@ export function FamilyProvider({ children }: { children: ReactNode }) {
         .from('users')
         .select('family_id, family_role')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
 
-      if (userError) throw userError;
+      if (userError && userError.code !== 'PGRST116') {
+        throw userError;
+      }
 
-      if (!userData.family_id) {
+      if (!userData || !userData.family_id) {
         console.log('User is not in a family yet');
         resetState();
         return;
@@ -83,7 +85,7 @@ export function FamilyProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     } catch (error) {
       console.error('Error fetching family data:', error);
-      setLoading(false);
+      resetState();
     }
   };
 
