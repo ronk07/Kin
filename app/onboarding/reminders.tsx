@@ -29,8 +29,7 @@ export default function RemindersSetupScreen() {
     setLoading(true);
 
     try {
-      // Get user's family
-      // Save preferences and task configuration directly to users table
+      // Save preferences directly to users table
       const { error: updateError } = await supabase
         .from('users')
         .update({
@@ -38,10 +37,6 @@ export default function RemindersSetupScreen() {
           daily_step_goal: parseInt(params.stepGoal as string) || 10000,
           reminder_enabled: reminderEnabled,
           reminder_time: reminderTime.toTimeString().split(' ')[0],
-          workout_task_enabled: true,
-          workout_task_subtitle: '',
-          bible_task_enabled: true,
-          bible_task_subtitle: '',
           onboarding_completed: true,
         })
         .eq('id', user.id);
@@ -87,6 +82,7 @@ export default function RemindersSetupScreen() {
           <View style={styles.content}>
             {/* Progress indicator */}
             <View style={styles.progressContainer}>
+              <View style={[styles.progressDot, styles.progressDotActive]} />
               <View style={[styles.progressDot, styles.progressDotActive]} />
               <View style={[styles.progressDot, styles.progressDotActive]} />
               <View style={[styles.progressDot, styles.progressDotActive]} />

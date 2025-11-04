@@ -18,6 +18,7 @@ interface VerificationModalProps {
   caloriesBurned?: number | null;
   durationMinutes?: number | null;
   bibleChapter?: string | null;
+  metrics?: Record<string, any>; // New flexible metrics prop
   onEditDetails?: () => void;
 }
 
@@ -34,6 +35,7 @@ export function VerificationModal({
   caloriesBurned,
   durationMinutes,
   bibleChapter,
+  metrics,
   onEditDetails,
 }: VerificationModalProps) {
   const getConfidenceColor = (confidence: number) => {
@@ -131,49 +133,65 @@ export function VerificationModal({
                 </View>
 
                 {/* Task Details */}
-                {(caloriesBurned !== null || durationMinutes !== null || bibleChapter) && (
-                  <View style={styles.detailsContainer}>
-                    <View style={styles.detailsHeader}>
-                      <Text style={styles.detailsLabel}>Task Details:</Text>
-                      {onEditDetails && (
-                        <TouchableOpacity onPress={onEditDetails} style={styles.editButton}>
-                          <Text style={styles.editButtonText}>Edit</Text>
-                        </TouchableOpacity>
-                      )}
+                {(() => {
+                  const hasLegacyDetails = caloriesBurned !== null || durationMinutes !== null || bibleChapter;
+                  const hasMetrics = metrics && Object.keys(metrics).length > 0;
+                  const hasAnyDetails = hasLegacyDetails || hasMetrics;
+                  
+                  if (!hasAnyDetails) {
+                    return onEditDetails ? (
+                      <TouchableOpacity onPress={onEditDetails} style={styles.addDetailsButton}>
+                        <Text style={styles.addDetailsButtonText}>Add Details</Text>
+                      </TouchableOpacity>
+                    ) : null;
+                  }
+                  
+                  return (
+                    <View style={styles.detailsContainer}>
+                      <View style={styles.detailsHeader}>
+                        <Text style={styles.detailsLabel}>Task Details:</Text>
+                        {onEditDetails && (
+                          <TouchableOpacity onPress={onEditDetails} style={styles.editButton}>
+                            <Text style={styles.editButtonText}>Edit</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                      <View style={styles.detailsContent}>
+                        {/* Legacy details for backward compatibility */}
+                        {hasLegacyDetails && (
+                          <>
+                            {caloriesBurned !== null && (
+                              <Text style={styles.detailsText}>{caloriesBurned} calories</Text>
+                            )}
+                            {durationMinutes !== null && (
+                              <Text style={styles.detailsText}>
+                                {caloriesBurned !== null ? ' • ' : ''}
+                                {durationMinutes} minutes
+                              </Text>
+                            )}
+                            {bibleChapter && (
+                              <Text style={styles.detailsText}>{bibleChapter}</Text>
+                            )}
+                          </>
+                        )}
+                        {/* New metrics display */}
+                        {hasMetrics && (
+                          <>
+                            {hasLegacyDetails && <Text style={styles.detailsText}> • </Text>}
+                            {Object.entries(metrics)
+                              .filter(([_, value]) => value !== null && value !== undefined && value !== '')
+                              .map(([key, value], index, arr) => (
+                                <Text key={key} style={styles.detailsText}>
+                                  {index > 0 || hasLegacyDetails ? ' • ' : ''}
+                                  {key.charAt(0).toUpperCase() + key.slice(1)}: {value}
+                                </Text>
+                              ))}
+                          </>
+                        )}
+                      </View>
                     </View>
-                    {taskName.toLowerCase().includes('workout') ? (
-                      <View style={styles.detailsContent}>
-                        {caloriesBurned !== null && (
-                          <Text style={styles.detailsText}>{caloriesBurned} calories</Text>
-                        )}
-                        {durationMinutes !== null && (
-                          <Text style={styles.detailsText}>
-                            {caloriesBurned !== null ? ' • ' : ''}
-                            {durationMinutes} minutes
-                          </Text>
-                        )}
-                        {caloriesBurned === null && durationMinutes === null && (
-                          <Text style={styles.detailsTextPlaceholder}>No details added yet</Text>
-                        )}
-                      </View>
-                    ) : (
-                      <View style={styles.detailsContent}>
-                        {bibleChapter ? (
-                          <Text style={styles.detailsText}>{bibleChapter}</Text>
-                        ) : (
-                          <Text style={styles.detailsTextPlaceholder}>No chapter added yet</Text>
-                        )}
-                      </View>
-                    )}
-                  </View>
-                )}
-
-                {/* Add Details Button (if no details exist) */}
-                {caloriesBurned === null && durationMinutes === null && !bibleChapter && onEditDetails && (
-                  <TouchableOpacity onPress={onEditDetails} style={styles.addDetailsButton}>
-                    <Text style={styles.addDetailsButtonText}>Add Details</Text>
-                  </TouchableOpacity>
-                )}
+                  );
+                })()}
               </View>
 
               {/* Action Buttons */}

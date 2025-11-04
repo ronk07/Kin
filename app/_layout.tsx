@@ -53,11 +53,11 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <UserProvider>
-        <FamilyProvider>
+      <FamilyProvider>
+        <UserProvider>
           <RootLayoutNav />
-        </FamilyProvider>
-      </UserProvider>
+        </UserProvider>
+      </FamilyProvider>
     </AuthProvider>
   );
 }

@@ -16,6 +16,7 @@ export default function FamilySetupScreen() {
   const [familyName, setFamilyName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [createdFamilyCode, setCreatedFamilyCode] = useState('');
+  const [createdFamilyId, setCreatedFamilyId] = useState('');
   const [loading, setLoading] = useState(false);
   
   const { user } = useAuth();
@@ -79,6 +80,7 @@ export default function FamilySetupScreen() {
       await refreshAll();
 
       // Show success screen with invite code
+      setCreatedFamilyId(family.id);
       setCreatedFamilyCode(code);
       setMode('success');
     } catch (error: any) {
@@ -112,7 +114,11 @@ export default function FamilySetupScreen() {
       // Refresh family context to load the new family data
       await refreshAll();
 
-      router.push('/onboarding/goals');
+      // Users who join a family skip task selection
+      router.push({
+        pathname: '/onboarding/goals',
+        params: { isJoining: 'true' },
+      });
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to join family');
     } finally {
@@ -236,7 +242,10 @@ export default function FamilySetupScreen() {
 
                   <Button
                     title="Continue"
-                    onPress={() => router.push('/onboarding/goals')}
+                    onPress={() => router.push({
+                      pathname: '/onboarding/goals',
+                      params: { isJoining: 'false', createdFamilyId: createdFamilyId },
+                    })}
                     fullWidth
                     variant="primary"
                   />

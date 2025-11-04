@@ -53,26 +53,46 @@ export default function AuthScreen() {
           Alert.alert('Login Failed', error.message || 'Invalid email or password');
         }
       } else {
-        const { error } = await signUp(email, password, name);
+        const { error, needsEmailVerification } = await signUp(email, password, name);
         if (error) {
           Alert.alert('Signup Failed', error.message || 'Failed to create account');
         } else {
-          // Successfully signed up - switch to login screen
-          Alert.alert(
-            'Success',
-            'Account created! Please sign in to continue.',
-            [
-              {
-                text: 'OK',
-                onPress: () => {
-                  setIsLogin(true);
-                  setName('');
-                  setPassword('');
-                  // Keep email filled for convenience
+          // Check if email verification is required
+          if (needsEmailVerification) {
+            // Email confirmation is enabled - user needs to verify email
+            Alert.alert(
+              'Check Your Email',
+              'We sent you a confirmation email. Please click the link in the email to verify your account before signing in.',
+              [
+                {
+                  text: 'OK',
+                  onPress: () => {
+                    setIsLogin(true);
+                    setName('');
+                    setPassword('');
+                    // Keep email filled for convenience
+                  }
                 }
-              }
-            ]
-          );
+              ]
+            );
+          } else {
+            // Email confirmation is disabled - user can sign in immediately
+            Alert.alert(
+              'Success',
+              'Account created! Please sign in to continue.',
+              [
+                {
+                  text: 'OK',
+                  onPress: () => {
+                    setIsLogin(true);
+                    setName('');
+                    setPassword('');
+                    // Keep email filled for convenience
+                  }
+                }
+              ]
+            );
+          }
         }
       }
     } catch (error: any) {

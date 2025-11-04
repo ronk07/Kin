@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Button } from '@/lib/components/Button';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
@@ -18,16 +18,31 @@ export default function GoalsSetupScreen() {
   const [stepGoal, setStepGoal] = useState(10000);
   
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const isJoining = params.isJoining === 'true';
+  const createdFamilyId = params.createdFamilyId as string | undefined;
 
   const handleContinue = () => {
-    // Store goals in temporary state (will be saved in the last onboarding step)
-    router.push({
-      pathname: '/onboarding/reminders',
-      params: {
-        workoutGoal: workoutGoal.toString(),
-        stepGoal: stepGoal.toString(),
-      },
-    });
+    // If user is joining a family, skip task selection and go straight to reminders
+    if (isJoining) {
+      router.push({
+        pathname: '/onboarding/reminders',
+        params: {
+          workoutGoal: workoutGoal.toString(),
+          stepGoal: stepGoal.toString(),
+        },
+      });
+    } else {
+      // If user created a family, proceed to task selection
+      router.push({
+        pathname: '/onboarding/tasks',
+        params: {
+          workoutGoal: workoutGoal.toString(),
+          stepGoal: stepGoal.toString(),
+          familyId: createdFamilyId,
+        },
+      });
+    }
   };
 
   return (
@@ -45,6 +60,7 @@ export default function GoalsSetupScreen() {
               <View style={[styles.progressDot, styles.progressDotActive]} />
               <View style={[styles.progressDot, styles.progressDotActive]} />
               <View style={[styles.progressDot, styles.progressDotActive]} />
+              {!isJoining && <View style={[styles.progressDot]} />}
               <View style={[styles.progressDot]} />
             </View>
 

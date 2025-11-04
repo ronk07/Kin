@@ -15,6 +15,7 @@ interface TaskCardProps {
   caloriesBurned?: number | null;
   durationMinutes?: number | null;
   bibleChapter?: string | null;
+  metrics?: Record<string, any>; // New flexible metrics prop
 }
 
 export function TaskCard({ 
@@ -26,6 +27,7 @@ export function TaskCard({
   caloriesBurned,
   durationMinutes,
   bibleChapter,
+  metrics,
 }: TaskCardProps) {
   const [loading, setLoading] = useState(false);
   
@@ -160,15 +162,39 @@ export function TaskCard({
         {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
         {verified && (
           <>
-            {(caloriesBurned !== null || durationMinutes !== null) && (
+            {/* Display new metrics if available, otherwise fall back to legacy */}
+            {metrics && Object.keys(metrics).length > 0 ? (
               <Text style={styles.detailsText}>
-                {caloriesBurned !== null && `${caloriesBurned} cal`}
-                {caloriesBurned !== null && durationMinutes !== null && ' • '}
-                {durationMinutes !== null && `${durationMinutes} min`}
+                {Object.entries(metrics)
+                  .filter(([_, value]) => value !== null && value !== undefined && value !== '')
+                  .map(([key, value]) => {
+                    // Format metric display with units
+                    if (key === 'calories') return `${value} cal`;
+                    if (key === 'duration') return `${value} min`;
+                    if (key === 'distance') return `${value} km`;
+                    if (key === 'chapter') return `${value}`;
+                    // Default formatting
+                    const formattedKey = key.charAt(0).toUpperCase() + key.slice(1);
+                    return `${formattedKey}: ${value}`;
+                  })
+                  .join(' • ')}
               </Text>
-            )}
-            {bibleChapter && (
-              <Text style={styles.detailsText}>{bibleChapter}</Text>
+            ) : (
+              <>
+                {/* Legacy props for backward compatibility */}
+                {(caloriesBurned !== null && caloriesBurned !== undefined || 
+                  durationMinutes !== null && durationMinutes !== undefined) && (
+                  <Text style={styles.detailsText}>
+                    {caloriesBurned !== null && caloriesBurned !== undefined && `${caloriesBurned} cal`}
+                    {caloriesBurned !== null && caloriesBurned !== undefined && 
+                     durationMinutes !== null && durationMinutes !== undefined && ' • '}
+                    {durationMinutes !== null && durationMinutes !== undefined && `${durationMinutes} min`}
+                  </Text>
+                )}
+                {bibleChapter && (
+                  <Text style={styles.detailsText}>{bibleChapter}</Text>
+                )}
+              </>
             )}
           </>
         )}

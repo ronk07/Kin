@@ -1,14 +1,23 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from './AuthContext';
-import type { User } from '@/lib/types/database';
+import { useFamily } from './FamilyContext';
+import type { User, FamilyTask, TaskTemplate, TaskTemplateMetric } from '@/lib/types/database';
 
-interface Task {
-  id: string;
-  name: 'workout' | 'bible_reading';
-  title: string;
-  subtitle: string;
+export interface Task {
+  id: string; // family_task_id
+  familyTaskId: string;
+  templateName: string;
+  name: string; // For backward compatibility, same as templateName
+  title: string; // display_name or custom_name
+  subtitle: string; // description or custom_subtitle
   enabled: boolean;
+  category: string;
+  icon: string;
+  proofType: string;
+  aiModel: string | null;
+  pointsValue: number;
+  metrics: TaskTemplateMetric[];
 }
 
 interface UserContextType {
@@ -24,6 +33,7 @@ const UserContext = createContext<UserContextType | undefined>(undefined);
 
 export function UserProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const { familyId } = useFamily();
   const [profile, setProfile] = useState<User | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,12 +41,13 @@ export function UserProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (user) {
       fetchProfile();
+      fetchFamilyTasks();
     } else {
       setProfile(null);
       setTasks([]);
       setLoading(false);
     }
-  }, [user]);
+  }, [user, familyId]);
 
   const fetchProfile = async () => {
     if (!user) return;
@@ -54,39 +65,50 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
       if (data) {
         setProfile(data);
-        
-        // Build tasks from user profile
-        const userTasks: Task[] = [];
-        
-        if (data.workout_task_enabled) {
-          userTasks.push({
-            id: 'workout',
-            name: 'workout',
-            title: 'Workout',
-            subtitle: data.workout_task_subtitle || '',
-            enabled: true,
-          });
-        }
-        
-        if (data.bible_task_enabled) {
-          userTasks.push({
-            id: 'bible_reading',
-            name: 'bible_reading',
-            title: 'Read Bible',
-            subtitle: data.bible_task_subtitle || '',
-            enabled: true,
-          });
-        }
-        
-        setTasks(userTasks);
       } else {
         // User doesn't exist in users table yet
         setProfile(null);
-        setTasks([]);
       }
     } catch (error) {
       console.error('Error fetching user profile:', error);
       setProfile(null);
+    }
+  };
+
+  const fetchFamilyTasks = async () => {
+    if (!user || !familyId) {
+      setTasks([]);
+      return;
+    }
+
+    try {
+      // Use the helper function to get family tasks
+      const { data, error } = await supabase.rpc('get_family_active_tasks', {
+        p_family_id: familyId
+      });
+
+      if (error) throw error;
+
+      // Transform the data to match our Task interface
+      const familyTasks: Task[] = (data || []).map((task: any) => ({
+        id: task.family_task_id,
+        familyTaskId: task.family_task_id,
+        templateName: task.template_name,
+        name: task.template_name, // For backward compatibility
+        title: task.custom_name || task.display_name,
+        subtitle: task.custom_subtitle || task.description || '',
+        enabled: true,
+        category: task.category,
+        icon: task.icon,
+        proofType: task.proof_type,
+        aiModel: task.ai_model,
+        pointsValue: task.points_value,
+        metrics: Array.isArray(task.metrics) ? task.metrics : [],
+      }));
+
+      setTasks(familyTasks);
+    } catch (error) {
+      console.error('Error fetching family tasks:', error);
       setTasks([]);
     } finally {
       setLoading(false);
@@ -95,6 +117,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   const refreshProfile = async () => {
     await fetchProfile();
+    await fetchFamilyTasks();
   };
 
   const updateProfile = async (updates: Partial<User>) => {

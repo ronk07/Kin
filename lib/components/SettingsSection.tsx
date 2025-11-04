@@ -38,7 +38,11 @@ export function SettingsSection({ title, items }: SettingsSectionProps) {
               thumbColor={item.value ? Colors.surface : Colors.beige}
             />
           ) : (
-            <TouchableOpacity onPress={item.onPress}>
+            <TouchableOpacity 
+              onPress={item.onPress}
+              style={styles.arrowButton}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
               <Text style={styles.buttonText}>→</Text>
             </TouchableOpacity>
           )}
@@ -81,6 +85,14 @@ const styles = StyleSheet.create({
     fontSize: Typography.caption,
     fontFamily: Typography.bodyFont,
     color: Colors.textSecondary,
+  },
+  arrowButton: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   buttonText: {
     fontSize: Typography.h4,

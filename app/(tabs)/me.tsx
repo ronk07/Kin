@@ -10,6 +10,8 @@ import { ProfileCard } from '@/lib/components/ProfileCard';
 import { SettingsSection } from '@/lib/components/SettingsSection';
 import { Button } from '@/lib/components/Button';
 import { Card } from '@/lib/components/Card';
+import { TaskManagementSection } from '@/lib/components/TaskManagementSection';
+import { AddTaskModal } from '@/lib/components/AddTaskModal';
 import { useAuth } from '@/lib/context/AuthContext';
 import { useUser } from '@/lib/context/UserContext';
 import { useFamily } from '@/lib/context/FamilyContext';
@@ -19,15 +21,18 @@ import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 
 export default function MeScreen() {
   const { user, signOut } = useAuth();
-  const { profile, updatePreferences, loading: userLoading } = useUser();
+  const { profile, tasks, updatePreferences, refreshProfile, loading: userLoading } = useUser();
   const { family, userRole, familyId, loading: familyLoading } = useFamily();
   const [totalPoints, setTotalPoints] = useState(0);
   const [familyCode, setFamilyCode] = useState<string | null>(null);
   const [loadingCode, setLoadingCode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showReminderTimePicker, setShowReminderTimePicker] = useState(false);
+  const [showReminderTimeModal, setShowReminderTimeModal] = useState(false);
+  const [tempReminderTime, setTempReminderTime] = useState<Date>(new Date());
   const [showWorkoutGoalModal, setShowWorkoutGoalModal] = useState(false);
   const [showStepGoalModal, setShowStepGoalModal] = useState(false);
+  const [showAddTaskModal, setShowAddTaskModal] = useState(false);
   const [tempWorkoutGoal, setTempWorkoutGoal] = useState(5);
   const [tempStepGoal, setTempStepGoal] = useState(10000);
   const router = useRouter();
@@ -138,20 +143,16 @@ export default function MeScreen() {
   useEffect(() => {
     if (!userLoading && !familyLoading && user && familyId) {
       fetchTotalPoints();
-      if (userRole === 'owner') {
-        fetchFamilyCode();
-      }
+      fetchFamilyCode(); // Fetch for all family members
     }
-  }, [userLoading, familyLoading, user, familyId, userRole, fetchTotalPoints, fetchFamilyCode]);
+  }, [userLoading, familyLoading, user, familyId, fetchTotalPoints, fetchFamilyCode]);
 
   // Refresh points and family code whenever the screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
       if (!userLoading && !familyLoading && user && familyId) {
         fetchTotalPoints();
-        if (userRole === 'owner') {
-          fetchFamilyCode();
-        }
+        fetchFamilyCode(); // Fetch for all family members
       }
 
       // Animate whenever screen comes into focus
@@ -166,7 +167,7 @@ export default function MeScreen() {
         headerTranslateY.value = withTiming(0, { duration: 500 });
         sectionsOpacity.value = withDelay(100, withTiming(1, { duration: 600 }));
       }
-    }, [userLoading, familyLoading, user, familyId, userRole, fetchTotalPoints, fetchFamilyCode, loading])
+    }, [userLoading, familyLoading, user, familyId, fetchTotalPoints, fetchFamilyCode, loading])
   );
 
   const headerAnimatedStyle = useAnimatedStyle(() => ({
@@ -239,47 +240,50 @@ export default function MeScreen() {
   };
 
   const handleReminderPress = () => {
+    // Initialize temp time with current reminder time
+    setTempReminderTime(parseReminderTime(profile?.reminder_time));
+    
     if (Platform.OS === 'ios') {
-      // iOS: Show DateTimePicker directly
-      setShowReminderTimePicker(true);
+      // iOS: Show modal with DateTimePicker and confirm button
+      setShowReminderTimeModal(true);
     } else {
-      // Android: Show alert with options
-      Alert.alert(
-        'Reminder Settings',
-        `Current reminder time: ${formatReminderTime(profile?.reminder_time)}\n\nWould you like to change it?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Change Time',
-            onPress: () => setShowReminderTimePicker(true),
-          },
-        ]
-      );
+      // Android: Show native picker (has built-in confirm/cancel)
+      setShowReminderTimePicker(true);
     }
   };
 
   const handleReminderTimeChange = async (event: any, selectedTime?: Date) => {
     if (Platform.OS === 'android') {
-      setShowReminderTimePicker(false);
-    }
-
-    if (event.type === 'set' && selectedTime) {
-      try {
-        // Convert Date to TIME string format (HH:MM:SS)
-        const hours = selectedTime.getHours().toString().padStart(2, '0');
-        const minutes = selectedTime.getMinutes().toString().padStart(2, '0');
-        const timeString = `${hours}:${minutes}:00`;
-
-        await updatePreferences({ reminder_time: timeString });
-        
-        if (Platform.OS === 'ios') {
-          setShowReminderTimePicker(false);
+      // Android: Save immediately when user confirms
+      if (event.type === 'set' && selectedTime) {
+        try {
+          const hours = selectedTime.getHours().toString().padStart(2, '0');
+          const minutes = selectedTime.getMinutes().toString().padStart(2, '0');
+          const timeString = `${hours}:${minutes}:00`;
+          await updatePreferences({ reminder_time: timeString });
+        } catch (error: any) {
+          Alert.alert('Error', error.message || 'Failed to update reminder time');
         }
-      } catch (error: any) {
-        Alert.alert('Error', error.message || 'Failed to update reminder time');
       }
-    } else if (event.type === 'dismissed') {
       setShowReminderTimePicker(false);
+    } else {
+      // iOS: Only update temp time, don't save yet
+      if (selectedTime) {
+        setTempReminderTime(selectedTime);
+      }
+    }
+  };
+
+  const handleConfirmReminderTime = async () => {
+    try {
+      const hours = tempReminderTime.getHours().toString().padStart(2, '0');
+      const minutes = tempReminderTime.getMinutes().toString().padStart(2, '0');
+      const timeString = `${hours}:${minutes}:00`;
+      await updatePreferences({ reminder_time: timeString });
+      setShowReminderTimeModal(false);
+      Alert.alert('Success', 'Reminder time updated!');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to update reminder time');
     }
   };
 
@@ -317,6 +321,37 @@ export default function MeScreen() {
     );
   };
 
+  const handleAddTask = () => {
+    console.log('Add task button pressed, userRole:', userRole, 'familyId:', familyId);
+    setShowAddTaskModal(true);
+  };
+
+  const handleTaskAdded = async () => {
+    await refreshProfile();
+  };
+
+  const handleRemoveTask = async (familyTaskId: string) => {
+    if (!familyId) return;
+
+    console.log('Remove task called, familyTaskId:', familyTaskId, 'userRole:', userRole);
+    try {
+      const { error } = await supabase.rpc('remove_family_task', {
+        p_family_id: familyId,
+        p_family_task_id: familyTaskId,
+      });
+
+      if (error) throw error;
+
+      Alert.alert('Success', 'Task removed successfully');
+      await refreshProfile();
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to remove task');
+      console.error('Error removing task:', error);
+    }
+  };
+
+  console.log('MeScreen render - userRole:', userRole, 'tasks:', tasks.length, 'canManage: true (all members can manage)');
+
   if (loading || userLoading || familyLoading) {
     return (
       <Container>
@@ -326,23 +361,6 @@ export default function MeScreen() {
       </Container>
     );
   }
-
-  const goalsSettings = [
-    {
-      id: 'workout',
-      label: 'Weekly Workout Goal',
-      description: `${profile?.weekly_workout_goal || 5} workouts per week`,
-      type: 'button' as const,
-      onPress: handleWorkoutGoalChange,
-    },
-    {
-      id: 'steps',
-      label: 'Daily Step Goal',
-      description: `${(profile?.daily_step_goal || 10000).toLocaleString()} steps`,
-      type: 'button' as const,
-      onPress: handleStepGoalChange,
-    },
-  ];
 
   const preferencesSettings = [
     {
@@ -384,7 +402,7 @@ export default function MeScreen() {
             />
           </Animated.View>
 
-          {userRole === 'owner' && (
+          {familyId && (
             <Animated.View style={sectionsAnimatedStyle}>
               <Card style={styles.familyCodeCard}>
                 <Text style={styles.familyCodeTitle}>Family Invite Code</Text>
@@ -406,35 +424,101 @@ export default function MeScreen() {
                       <Text style={styles.shareButtonText}>Share Code</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity onPress={handleGenerateNewCode} disabled={loadingCode}>
-                      <Text style={styles.generateNewText}>
-                        {loadingCode ? 'Generating...' : 'Generate New Code'}
-                      </Text>
-                    </TouchableOpacity>
+                    {userRole === 'owner' && (
+                      <TouchableOpacity onPress={handleGenerateNewCode} disabled={loadingCode}>
+                        <Text style={styles.generateNewText}>
+                          {loadingCode ? 'Generating...' : 'Generate New Code'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                   </>
                 ) : (
                   <>
-                    <View style={styles.codeContainer}>
-                      <Text style={styles.noCodeText}>No code generated yet</Text>
-                    </View>
-                    
-                    <TouchableOpacity 
-                      style={styles.generateButton}
-                      onPress={handleGenerateNewCode}
-                      disabled={loadingCode}
-                    >
-                      <Text style={styles.generateButtonText}>
-                        {loadingCode ? 'Generating...' : 'Generate Invite Code'}
-                      </Text>
-                    </TouchableOpacity>
+                    {userRole === 'owner' ? (
+                      <>
+                        <View style={styles.codeContainer}>
+                          <Text style={styles.noCodeText}>No code generated yet</Text>
+                        </View>
+                        
+                        <TouchableOpacity 
+                          style={styles.generateButton}
+                          onPress={handleGenerateNewCode}
+                          disabled={loadingCode}
+                        >
+                          <Text style={styles.generateButtonText}>
+                            {loadingCode ? 'Generating...' : 'Generate Invite Code'}
+                          </Text>
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <View style={styles.codeContainer}>
+                        <Text style={styles.noCodeText}>No invite code available</Text>
+                      </View>
+                    )}
                   </>
                 )}
               </Card>
             </Animated.View>
           )}
 
+          {familyId && (
+            <Animated.View style={sectionsAnimatedStyle}>
+              <TaskManagementSection
+                tasks={tasks}
+                onAddTask={handleAddTask}
+                onRemoveTask={handleRemoveTask}
+                canManage={true}
+              />
+            </Animated.View>
+          )}
+
           <Animated.View style={sectionsAnimatedStyle}>
-            <SettingsSection title="Goals" items={goalsSettings} />
+            <View style={styles.goalsSection}>
+              <Text style={styles.goalsSectionTitle}>Goals</Text>
+              <View style={styles.goalsList}>
+                <Card style={styles.goalCard}>
+                  <TouchableOpacity 
+                    style={styles.goalContent}
+                    onPress={handleWorkoutGoalChange}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.goalInfo}>
+                      <Text style={styles.goalName}>Weekly Workout Goal</Text>
+                      <Text style={styles.goalDescription}>
+                        {profile?.weekly_workout_goal || 5} workouts per week
+                      </Text>
+                    </View>
+                    <View style={styles.goalRight}>
+                      <View style={styles.pointsBadge}>
+                        <Text style={styles.pointsText}>+20 pts</Text>
+                      </View>
+                      <Text style={styles.arrowText}>→</Text>
+                    </View>
+                  </TouchableOpacity>
+                </Card>
+
+                <Card style={styles.goalCard}>
+                  <TouchableOpacity 
+                    style={styles.goalContent}
+                    onPress={handleStepGoalChange}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.goalInfo}>
+                      <Text style={styles.goalName}>Daily Step Goal</Text>
+                      <Text style={styles.goalDescription}>
+                        {(profile?.daily_step_goal || 10000).toLocaleString()} steps
+                      </Text>
+                    </View>
+                    <View style={styles.goalRight}>
+                      <View style={styles.pointsBadge}>
+                        <Text style={styles.pointsText}>+5 pts</Text>
+                      </View>
+                      <Text style={styles.arrowText}>→</Text>
+                    </View>
+                  </TouchableOpacity>
+                </Card>
+              </View>
+            </View>
           </Animated.View>
 
           <Animated.View style={sectionsAnimatedStyle}>
@@ -454,16 +538,82 @@ export default function MeScreen() {
         </ScrollView>
       </SafeAreaView>
 
-      {/* Reminder Time Picker */}
-      {showReminderTimePicker && (
+      {/* Reminder Time Picker - Android (native) */}
+      {showReminderTimePicker && Platform.OS === 'android' && (
         <DateTimePicker
           value={parseReminderTime(profile?.reminder_time)}
           mode="time"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          display="default"
           onChange={handleReminderTimeChange}
           is24Hour={false}
         />
       )}
+
+      {/* Reminder Time Modal - iOS (with confirm button) */}
+      <Modal
+        visible={showReminderTimeModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowReminderTimeModal(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={styles.modalBackdrop}>
+            <TouchableOpacity
+              style={styles.modalBackdropTouch}
+              activeOpacity={1}
+              onPress={() => setShowReminderTimeModal(false)}
+            />
+            <Card style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Set Reminder Time</Text>
+                <TouchableOpacity
+                  onPress={() => setShowReminderTimeModal(false)}
+                  style={styles.modalCloseButton}
+                >
+                  <X size={24} color={Colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+              
+              <Text style={styles.modalDescription}>
+                Choose when you'd like to receive daily reminders
+              </Text>
+
+              <View style={styles.timePickerContainer}>
+                <DateTimePicker
+                  value={tempReminderTime}
+                  mode="time"
+                  display="spinner"
+                  onChange={(event, selectedTime) => {
+                    if (selectedTime) {
+                      setTempReminderTime(selectedTime);
+                    }
+                  }}
+                  is24Hour={false}
+                  textColor={Colors.text}
+                />
+              </View>
+
+              <View style={styles.modalButtonContainer}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonCancel]}
+                  onPress={() => setShowReminderTimeModal(false)}
+                >
+                  <Text style={styles.modalButtonCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonConfirm]}
+                  onPress={handleConfirmReminderTime}
+                >
+                  <Text style={styles.modalButtonConfirmText}>Confirm</Text>
+                </TouchableOpacity>
+              </View>
+            </Card>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* Workout Goal Modal */}
       <Modal
@@ -612,6 +762,17 @@ export default function MeScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Add Task Modal */}
+      {familyId && user && (
+        <AddTaskModal
+          visible={showAddTaskModal}
+          onClose={() => setShowAddTaskModal(false)}
+          onTaskAdded={handleTaskAdded}
+          familyId={familyId}
+          userId={user.id}
+        />
+      )}
     </Container>
   );
 }
@@ -855,6 +1016,78 @@ const styles = StyleSheet.create({
     fontFamily: Typography.bodyFont,
     color: Colors.beige,
     fontWeight: Typography.semibold,
+  },
+  modalButtonConfirm: {
+    backgroundColor: Colors.accent,
+  },
+  modalButtonConfirmText: {
+    fontSize: Typography.body,
+    fontFamily: Typography.bodyFont,
+    color: Colors.beige,
+    fontWeight: Typography.semibold,
+  },
+  timePickerContainer: {
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+  },
+  goalsSection: {
+    marginBottom: Spacing.xl,
+  },
+  goalsSectionTitle: {
+    fontSize: Typography.h3,
+    fontFamily: Typography.headingFont,
+    color: Colors.text,
+    fontWeight: Typography.bold,
+    marginBottom: Spacing.md,
+  },
+  goalsList: {
+    gap: Spacing.sm,
+  },
+  goalCard: {
+    padding: Spacing.md,
+  },
+  goalContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  goalInfo: {
+    flex: 1,
+    marginRight: Spacing.md,
+  },
+  goalName: {
+    fontSize: Typography.body,
+    fontFamily: Typography.bodyFont,
+    color: Colors.text,
+    fontWeight: Typography.medium,
+    marginBottom: Spacing.xs,
+  },
+  goalDescription: {
+    fontSize: Typography.bodySmall,
+    fontFamily: Typography.bodyFont,
+    color: Colors.textSecondary,
+  },
+  goalRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  pointsBadge: {
+    backgroundColor: Colors.accent + '20',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.sm,
+  },
+  pointsText: {
+    fontSize: Typography.bodySmall,
+    fontFamily: Typography.bodyFont,
+    color: Colors.accent,
+    fontWeight: Typography.semibold,
+  },
+  arrowText: {
+    fontSize: Typography.h4,
+    fontFamily: Typography.bodyFont,
+    color: Colors.accent,
   },
 });
 

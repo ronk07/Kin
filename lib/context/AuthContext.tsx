@@ -7,7 +7,11 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   onboardingCompleted: boolean | null;
-  signUp: (email: string, password: string, name: string) => Promise<{ error: any }>;
+  signUp: (email: string, password: string, name: string) => Promise<{ 
+    error: any; 
+    needsEmailVerification?: boolean; 
+    user?: User | null;
+  }>;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
   refreshOnboardingStatus: () => Promise<void>;
@@ -133,12 +137,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          // Optional: redirect URL after email confirmation
+          // emailRedirectTo: 'your-app-scheme://auth/callback',
+        },
       });
 
       if (error) return { error };
 
+      // Check if email confirmation is required
+      // When email confirmation is enabled, data.session will be null
+      // and the user needs to verify their email first
+      const needsEmailVerification = !data.session && data.user;
+
       if (data.user) {
         // Create user record in users table
+        // Note: This happens even if email is not verified yet
         const { error: userError } = await supabase
           .from('users')
           .insert({
@@ -152,7 +166,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      return { error: null };
+      // Return information about email verification status
+      return { 
+        error: null, 
+        needsEmailVerification,
+        user: data.user,
+      };
     } catch (error) {
       return { error };
     }

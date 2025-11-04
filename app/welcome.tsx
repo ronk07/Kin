@@ -26,7 +26,7 @@ export default function WelcomeScreen() {
               resizeMode="contain"
             />
             <Text style={styles.appName}>Kin</Text>
-            <Text style={styles.tagline}>Faith, Family, Fitness</Text>
+            <Text style={styles.tagline}>Faith, Family, Wellness</Text>
           </View>
 
           {/* Call to Action */}

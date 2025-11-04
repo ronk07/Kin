@@ -134,11 +134,16 @@ export function FamilyProvider({ children }: { children: ReactNode }) {
         .from('task_completions')
         .select(`
           id,
-          task_name,
+          family_task_id,
           completed_date,
           proof_url,
           created_at,
-          users:user_id (name)
+          users:user_id (name),
+          family_tasks!inner (
+            task_templates!inner (
+              display_name
+            )
+          )
         `)
         .eq('family_id', targetFamilyId)
         .order('created_at', { ascending: false })
@@ -146,13 +151,16 @@ export function FamilyProvider({ children }: { children: ReactNode }) {
 
       if (error) throw error;
 
-      const formattedActivities: Activity[] = (data || []).map((item: any) => ({
-        id: item.id,
-        userName: item.users?.name || 'Unknown',
-        action: item.task_name === 'workout' ? 'completed a workout' : 'read the Bible',
-        timestamp: item.created_at,
-        proof_url: item.proof_url,
-      }));
+      const formattedActivities: Activity[] = (data || []).map((item: any) => {
+        const taskName = item.family_tasks?.task_templates?.display_name || 'a task';
+        return {
+          id: item.id,
+          userName: item.users?.name || 'Unknown',
+          action: `completed ${taskName.toLowerCase()}`,
+          timestamp: item.created_at,
+          proof_url: item.proof_url,
+        };
+      });
 
       setActivities(formattedActivities);
     } catch (error) {

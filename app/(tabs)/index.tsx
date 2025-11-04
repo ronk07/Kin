@@ -27,10 +27,9 @@ type TaskVerificationDetail = {
   proofUrl: string | null;
   verifiedAt: string | null;
   model: string | null;
-  caloriesBurned: number | null;
-  durationMinutes: number | null;
-  bibleChapter: string | null;
+  metrics: Record<string, any>; // Flexible metrics storage
   completionId: string | null;
+  familyTaskId: string | null;
 };
 
 export default function HomeScreen() {
@@ -51,7 +50,7 @@ export default function HomeScreen() {
   // Verification modal state
   const [verificationModalVisible, setVerificationModalVisible] = useState(false);
   const [verificationImageUri, setVerificationImageUri] = useState<string | null>(null);
-  const [verificationTaskName, setVerificationTaskName] = useState<'workout' | 'bible_reading' | null>(null);
+  const [verificationFamilyTaskId, setVerificationFamilyTaskId] = useState<string | null>(null);
   const [verificationResult, setVerificationResult] = useState<VerificationResponse | null>(null);
   const [verificationLoading, setVerificationLoading] = useState(false);
   const [pendingCompletionDate, setPendingCompletionDate] = useState<string | null>(null);
@@ -59,9 +58,9 @@ export default function HomeScreen() {
   
   // Task details form state
   const [taskDetailsFormVisible, setTaskDetailsFormVisible] = useState(false);
-  const [editingTaskDetails, setEditingTaskDetails] = useState<{ taskName: 'workout' | 'bible_reading'; completionId: string } | null>(null);
+  const [editingTaskDetails, setEditingTaskDetails] = useState<{ familyTaskId: string; completionId: string } | null>(null);
   const [pendingCompletionId, setPendingCompletionId] = useState<string | null>(null);
-  const [taskDetailsTaskName, setTaskDetailsTaskName] = useState<'workout' | 'bible_reading' | null>(null);
+  const [pendingFamilyTaskId, setPendingFamilyTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userLoading && !familyLoading && user && familyId) {
@@ -69,9 +68,6 @@ export default function HomeScreen() {
     }
   }, [userLoading, familyLoading, user, familyId]);
 
-  useEffect(() => {
-    console.log('User tasks loaded:', tasks.length, tasks);
-  }, [tasks]);
 
   useEffect(() => {
     // Refresh steps every time the screen is focused
@@ -117,7 +113,7 @@ export default function HomeScreen() {
     if (!user || !familyId) return;
 
     try {
-      // Calculate and update streak based on both tasks being completed
+      // Calculate and update streak based on tasks being completed
       const streak = await calculateStreak(user.id);
       await updateStreakInDatabase(user.id);
       setStreakDays(streak);
@@ -126,7 +122,7 @@ export default function HomeScreen() {
       const today = new Date().toISOString().split('T')[0];
       const { data: completions } = await supabase
         .from('task_completions')
-        .select('id, task_name, proof_url, verification_confidence, verification_reason, verification_model, verified_at, calories_burned, duration_minutes, bible_chapter')
+        .select('id, family_task_id, proof_url, verification_confidence, verification_reason, verification_model, verified_at, metrics')
         .eq('user_id', user.id)
         .eq('completed_date', today)
         .eq('verification_status', 'verified');
@@ -134,18 +130,18 @@ export default function HomeScreen() {
       const completed: Record<string, boolean> = {};
       const details: Record<string, TaskVerificationDetail> = {};
       completions?.forEach(c => {
-        if (c.task_name === 'workout' || c.task_name === 'bible_reading') {
-          completed[c.task_name] = true;
-          details[c.task_name] = {
+        if (c.family_task_id) {
+          // Use family_task_id as the key
+          completed[c.family_task_id] = true;
+          details[c.family_task_id] = {
             confidence: c.verification_confidence ?? null,
             reason: c.verification_reason ?? null,
             proofUrl: c.proof_url ?? null,
             verifiedAt: c.verified_at ?? null,
             model: c.verification_model ?? null,
-            caloriesBurned: c.calories_burned ?? null,
-            durationMinutes: c.duration_minutes ?? null,
-            bibleChapter: c.bible_chapter ?? null,
+            metrics: c.metrics || {},
             completionId: c.id ?? null,
+            familyTaskId: c.family_task_id ?? null,
           };
         }
       });
@@ -158,7 +154,7 @@ export default function HomeScreen() {
     }
   };
 
-  const handleMarkIncomplete = async (taskName: 'workout' | 'bible_reading', dateOverride?: string) => {
+  const handleMarkIncomplete = async (familyTaskId: string, dateOverride?: string) => {
     if (!user || !familyId) return;
 
     try {
@@ -166,24 +162,28 @@ export default function HomeScreen() {
       const completionDate = dateOverride || selectedDate || new Date().toISOString().split('T')[0];
       const todayDate = new Date().toISOString().split('T')[0];
       
+      // Get the task template name for points removal
+      const task = tasks.find(t => t.familyTaskId === familyTaskId);
+      const taskTemplateName = task?.templateName || 'task';
+      
       // Delete task completion for the selected date
       const { error: deleteError } = await supabase
         .from('task_completions')
         .delete()
-        .eq('task_name', taskName)
+        .eq('family_task_id', familyTaskId)
         .eq('user_id', user.id)
         .eq('completed_date', completionDate);
 
       if (deleteError) throw deleteError;
 
-      // Remove points if they were awarded today (we'll need to track this better, but for now just remove last 10 points)
+      // Remove points if they were awarded (we'll need to track this better, but for now just remove last points)
       // Note: In a production app, you'd want to track which points came from which completion
       const { data: pointsData } = await supabase
         .from('points')
         .select('id, points')
         .eq('user_id', user.id)
         .eq('family_id', familyId)
-        .eq('source', `${taskName} completion`)
+        .eq('source', `${taskTemplateName} completion`)
         .order('created_at', { ascending: false })
         .limit(1);
 
@@ -219,27 +219,34 @@ export default function HomeScreen() {
       setCompletedTasks(prev => {
         const updated = { ...prev };
         if (!dateOverride && !selectedDate) {
-          delete updated[taskName];
+          delete updated[familyTaskId];
         }
         return updated;
       });
       setTodayTaskDetails(prev => {
         if (completionDate !== todayDate) return prev;
         const updated = { ...prev };
-        delete updated[taskName];
+        delete updated[familyTaskId];
         return updated;
       });
       if (selectedDate || dateOverride) {
         setSelectedDayTasks(prev => {
           const updated = { ...prev };
-          updated[taskName] = false;
+          updated[familyTaskId] = false;
           return updated;
         });
         setSelectedDayDetails(prev => {
           const updated = { ...prev };
-          delete updated[taskName];
+          delete updated[familyTaskId];
           return updated;
         });
+      }
+      
+      // Update streak after marking incomplete
+      if (user) {
+        await updateStreakInDatabase(user.id);
+        const newStreak = await calculateStreak(user.id);
+        setStreakDays(newStreak);
       }
       
       await fetchUserData();
@@ -252,11 +259,18 @@ export default function HomeScreen() {
     }
   };
 
-  const handleTaskVerify = async (taskName: 'workout' | 'bible_reading', imageUri?: string) => {
+  const handleTaskVerify = async (familyTaskId: string, imageUri?: string) => {
     if (!user || !familyId) return;
 
     const completionDate = selectedDate || new Date().toISOString().split('T')[0];
     const today = new Date().toISOString().split('T')[0];
+    
+    // Find the task to get template name for verification
+    const task = tasks.find(t => t.familyTaskId === familyTaskId);
+    if (!task) {
+      Alert.alert('Error', 'Task not found');
+      return;
+    }
     
     // If no image provided, complete immediately without verification
     if (!imageUri) {
@@ -281,10 +295,10 @@ export default function HomeScreen() {
               {
                 text: 'Yes, Mark Complete',
                 onPress: async () => {
-                  const completionId = await performTaskVerification(taskName, undefined, completionDate, manualVerification);
+                  const completionId = await performTaskVerification(familyTaskId, undefined, completionDate, manualVerification);
                   if (completionId) {
                     setPendingCompletionId(completionId);
-                    setTaskDetailsTaskName(taskName);
+                    setPendingFamilyTaskId(familyTaskId);
                     setTaskDetailsFormVisible(true);
                   }
                   resolve();
@@ -294,10 +308,10 @@ export default function HomeScreen() {
           );
         });
       }
-      const completionId = await performTaskVerification(taskName, undefined, completionDate, manualVerification);
+      const completionId = await performTaskVerification(familyTaskId, undefined, completionDate, manualVerification);
       if (completionId) {
         setPendingCompletionId(completionId);
-        setTaskDetailsTaskName(taskName);
+        setPendingFamilyTaskId(familyTaskId);
         setTaskDetailsFormVisible(true);
       }
       return;
@@ -305,7 +319,7 @@ export default function HomeScreen() {
 
     // If image is provided, verify with OpenAI first
     setVerificationImageUri(imageUri);
-    setVerificationTaskName(taskName);
+    setVerificationFamilyTaskId(familyTaskId);
     setPendingCompletionDate(completionDate);
     setVerificationResult(null);
     setVerificationLoading(true);
@@ -313,7 +327,12 @@ export default function HomeScreen() {
     setVerificationModalVisible(true);
 
     try {
-      const result = await verifyTaskImage(imageUri, taskName);
+      // Map template name to TaskType for backward compatibility
+      const taskType: 'workout' | 'bible_reading' = 
+        task.templateName === 'workout' ? 'workout' :
+        task.templateName === 'bible_reading' ? 'bible_reading' :
+        'workout'; // Default fallback
+      const result = await verifyTaskImage(imageUri, taskType);
       setVerificationResult(result);
     } catch (error: any) {
       console.error('Error verifying image:', error);
@@ -344,10 +363,10 @@ export default function HomeScreen() {
               resetVerificationState();
 
               const proceed = async () => {
-                const completionId = await performTaskVerification(taskName, imageUri, completionDate, fallbackVerification);
+                const completionId = await performTaskVerification(familyTaskId, imageUri, completionDate, fallbackVerification);
                 if (completionId) {
                   setPendingCompletionId(completionId);
-                  setTaskDetailsTaskName(taskName);
+                  setPendingFamilyTaskId(familyTaskId);
                   setTaskDetailsFormVisible(true);
                 }
               };
@@ -379,9 +398,9 @@ export default function HomeScreen() {
   };
 
   const handleSaveTaskDetails = async (
-    taskName: 'workout' | 'bible_reading',
+    familyTaskId: string,
     completionId: string,
-    details: { caloriesBurned?: number; durationMinutes?: number; bibleChapter?: string }
+    metrics: Record<string, any>
   ) => {
     if (!user || !familyId) return;
 
@@ -392,27 +411,25 @@ export default function HomeScreen() {
       // Get the completion record to check its current status
       const { data: completionData, error: fetchError } = await supabase
         .from('task_completions')
-        .select('completed_date, verification_status')
+        .select('completed_date, verification_status, family_task_id')
         .eq('id', completionId)
         .eq('user_id', user.id)
         .single();
 
       if (fetchError) throw fetchError;
 
+      // Find the task to get points value
+      const task = tasks.find(t => t.familyTaskId === familyTaskId);
+      const pointsValue = task?.pointsValue || 10;
+      const taskTemplateName = task?.templateName || 'task';
+
       const updateData: {
-        calories_burned?: number | null;
-        duration_minutes?: number | null;
-        bible_chapter?: string | null;
+        metrics?: Record<string, any>;
         verification_status?: 'verified';
         verified_at?: string;
-      } = {};
-
-      if (taskName === 'workout') {
-        updateData.calories_burned = details.caloriesBurned ?? null;
-        updateData.duration_minutes = details.durationMinutes ?? null;
-      } else {
-        updateData.bible_chapter = details.bibleChapter ?? null;
-      }
+      } = {
+        metrics: metrics || {},
+      };
 
       // If this is a pending completion (just created), mark it as verified and award points
       const isPendingCompletion = completionData?.verification_status === 'pending';
@@ -427,17 +444,17 @@ export default function HomeScreen() {
           .insert({
             user_id: user.id,
             family_id: familyId,
-            points: 10,
-            source: `${taskName} completion`,
+            points: pointsValue,
+            source: `${taskTemplateName} completion`,
           });
 
         // Update UI to show task as completed
         const todayDate = new Date().toISOString().split('T')[0];
         if (completionDate === todayDate) {
-          setCompletedTasks(prev => ({ ...prev, [taskName]: true }));
+          setCompletedTasks(prev => ({ ...prev, [familyTaskId]: true }));
         }
         if (selectedDate === completionDate) {
-          setSelectedDayTasks(prev => ({ ...prev, [taskName]: true }));
+          setSelectedDayTasks(prev => ({ ...prev, [familyTaskId]: true }));
         }
       }
 
@@ -448,6 +465,19 @@ export default function HomeScreen() {
         .eq('user_id', user.id);
 
       if (error) throw error;
+
+      // Update streak after saving task details
+      if (user) {
+        await updateStreakInDatabase(user.id);
+        const newStreak = await calculateStreak(user.id);
+        setStreakDays(newStreak);
+
+        // Check weekly workout goal if this was a workout task
+        if (taskTemplateName === 'workout' && profile?.weekly_workout_goal) {
+          const { checkWeeklyWorkoutGoal } = await import('@/lib/utils/achievements');
+          await checkWeeklyWorkoutGoal(user.id, familyId, profile.weekly_workout_goal);
+        }
+      }
 
       // Refresh data to show updated details and completion status
       await fetchUserData();
@@ -463,22 +493,22 @@ export default function HomeScreen() {
     }
   };
 
-  const handleEditTaskDetails = (taskName: 'workout' | 'bible_reading') => {
+  const handleEditTaskDetails = (familyTaskId: string) => {
     // Close verification modal first
     setVerificationModalVisible(false);
     
     const dateForDetails = selectedDate || new Date().toISOString().split('T')[0];
     const detailSource = selectedDate ? selectedDayDetails : todayTaskDetails;
-    const detail = detailSource[taskName];
+    const detail = detailSource[familyTaskId];
 
     if (!detail || !detail.completionId) {
       // If no detail found, try using pendingCompletionId if available
-      if (pendingCompletionId && verificationTaskName === taskName) {
+      if (pendingCompletionId && verificationFamilyTaskId === familyTaskId) {
         setEditingTaskDetails({
-          taskName,
+          familyTaskId,
           completionId: pendingCompletionId,
         });
-        setTaskDetailsTaskName(taskName);
+        setPendingFamilyTaskId(familyTaskId);
         setTaskDetailsFormVisible(true);
       } else {
         Alert.alert('Error', 'Unable to find task completion to edit.');
@@ -487,15 +517,15 @@ export default function HomeScreen() {
     }
 
     setEditingTaskDetails({
-      taskName,
+      familyTaskId,
       completionId: detail.completionId,
     });
-    setTaskDetailsTaskName(taskName);
+    setPendingFamilyTaskId(familyTaskId);
     setTaskDetailsFormVisible(true);
   };
 
   const handleAcceptVerification = async () => {
-    if (!verificationTaskName) {
+    if (!verificationFamilyTaskId) {
       setVerificationModalVisible(false);
       resetVerificationState();
       return;
@@ -513,9 +543,9 @@ export default function HomeScreen() {
       const today = new Date().toISOString().split('T')[0];
 
       const execute = async () => {
-        const currentTaskName = verificationTaskName; // Store before reset
+        const currentFamilyTaskId = verificationFamilyTaskId; // Store before reset
         const completionId = await performTaskVerification(
-          verificationTaskName,
+          verificationFamilyTaskId,
           verificationImageUri || undefined,
           completionDate,
           verificationResult || undefined
@@ -523,9 +553,9 @@ export default function HomeScreen() {
         resetVerificationState();
         
         // Show task details form after verification
-        if (completionId && currentTaskName) {
+        if (completionId && currentFamilyTaskId) {
           setPendingCompletionId(completionId);
-          setTaskDetailsTaskName(currentTaskName);
+          setPendingFamilyTaskId(currentFamilyTaskId);
           setTaskDetailsFormVisible(true);
         }
       };
@@ -565,7 +595,7 @@ export default function HomeScreen() {
       return;
     }
 
-    if (!verificationTaskName) {
+    if (!verificationFamilyTaskId) {
       setVerificationModalVisible(false);
       resetVerificationState();
       return;
@@ -583,7 +613,7 @@ export default function HomeScreen() {
           style: 'destructive',
           onPress: async () => {
             setVerificationModalVisible(false);
-            await handleMarkIncomplete(verificationTaskName, completionDate);
+            await handleMarkIncomplete(verificationFamilyTaskId, completionDate);
             resetVerificationState();
           },
         },
@@ -593,7 +623,7 @@ export default function HomeScreen() {
 
   const resetVerificationState = () => {
     setVerificationImageUri(null);
-    setVerificationTaskName(null);
+    setVerificationFamilyTaskId(null);
     setVerificationResult(null);
     setVerificationLoading(false);
     setPendingCompletionDate(null);
@@ -601,12 +631,19 @@ export default function HomeScreen() {
   };
 
   const performTaskVerification = async (
-    taskName: 'workout' | 'bible_reading', 
+    familyTaskId: string,
     imageUri?: string,
     completionDate?: string,
     verificationResultOverride?: VerificationResponse
   ) => {
-    if (!user || !familyId) return;
+    if (!user || !familyId) return null;
+
+    // Find the task to get its template name for backward compatibility
+    const task = tasks.find(t => t.familyTaskId === familyTaskId);
+    if (!task) {
+      Alert.alert('Error', 'Task not found');
+      return null;
+    }
 
     const dateToUse = completionDate || selectedDate || new Date().toISOString().split('T')[0];
     const verificationInfo: VerificationResponse = verificationResultOverride ?? (
@@ -669,7 +706,8 @@ export default function HomeScreen() {
       const { data: completionData, error: completionError } = await supabase
         .from('task_completions')
         .insert({
-          task_name: taskName,
+          family_task_id: familyTaskId,
+          task_name: task.templateName, // Required for backward compatibility
           user_id: user.id,
           family_id: familyId,
           completed_date: dateToUse,
@@ -679,6 +717,7 @@ export default function HomeScreen() {
           verification_reason: verificationInfo.reason ?? null,
           verification_model: verificationInfo.model ?? null,
           verified_at: null, // Will be set when details are submitted
+          metrics: {}, // Empty metrics, will be filled when details are submitted
         })
         .select('id')
         .single();
@@ -772,7 +811,7 @@ export default function HomeScreen() {
   }, [steps, selectedDate, isAuthorized, isAvailable]);
 
   const fetchWeekCompletions = async () => {
-    if (!user) return;
+    if (!user || !familyId) return;
 
     const today = new Date();
     const currentDay = today.getDay();
@@ -781,31 +820,53 @@ export default function HomeScreen() {
     const endOfWeek = new Date(startOfWeek);
     endOfWeek.setDate(startOfWeek.getDate() + 6);
 
+    // Get all active family tasks for this family
+    const activeFamilyTaskIds = tasks.map(t => t.familyTaskId);
+
+    if (activeFamilyTaskIds.length === 0) {
+      setWeekCompletions({});
+      return;
+    }
+
     // Fetch all task completions for the week
     const { data } = await supabase
       .from('task_completions')
-      .select('completed_date, task_name')
+      .select('completed_date, family_task_id')
       .eq('user_id', user.id)
       .eq('verification_status', 'verified')
+      .in('family_task_id', activeFamilyTaskIds)
       .gte('completed_date', startOfWeek.toISOString().split('T')[0])
       .lte('completed_date', endOfWeek.toISOString().split('T')[0]);
 
-    // Group by date and check if BOTH tasks are completed
+    console.log('fetchWeekCompletions:', {
+      startDate: startOfWeek.toISOString().split('T')[0],
+      endDate: endOfWeek.toISOString().split('T')[0],
+      activeFamilyTaskIds,
+      fetchedData: data,
+    });
+
+    // Group by date and check if ALL active tasks are completed
     const completionsByDate: Record<string, Set<string>> = {};
     data?.forEach(c => {
-      if (!completionsByDate[c.completed_date]) {
-        completionsByDate[c.completed_date] = new Set();
+      if (c.family_task_id) {
+        if (!completionsByDate[c.completed_date]) {
+          completionsByDate[c.completed_date] = new Set();
+        }
+        completionsByDate[c.completed_date].add(c.family_task_id);
       }
-      completionsByDate[c.completed_date].add(c.task_name);
     });
 
-    // A day is completed if it has BOTH workout and bible_reading
+    // A day is completed if ALL active family tasks are completed
     const completions: Record<string, boolean> = {};
     Object.keys(completionsByDate).forEach(date => {
-      const tasks = completionsByDate[date];
-      completions[date] = tasks.has('workout') && tasks.has('bible_reading');
+      const completedTasks = completionsByDate[date];
+      // Check if all active tasks are completed
+      const allCompleted = activeFamilyTaskIds.every(taskId => completedTasks.has(taskId));
+      completions[date] = allCompleted;
+      console.log(`Date ${date}: ${completedTasks.size}/${activeFamilyTaskIds.length} tasks completed, allCompleted: ${allCompleted}`);
     });
 
+    console.log('Week completions result:', completions);
     setWeekCompletions(completions);
   };
 
@@ -816,30 +877,27 @@ export default function HomeScreen() {
       // Fetch tasks completed on this date
       const { data: tasksData } = await supabase
         .from('task_completions')
-        .select('id, task_name, proof_url, verification_confidence, verification_reason, verification_model, verified_at, calories_burned, duration_minutes, bible_chapter')
+        .select('id, family_task_id, proof_url, verification_confidence, verification_reason, verification_model, verified_at, metrics')
         .eq('user_id', user.id)
         .eq('completed_date', date)
         .eq('verification_status', 'verified');
 
-      const tasks: Record<string, boolean> = {
-        workout: false,
-        bible_reading: false,
-      };
+      const tasks: Record<string, boolean> = {};
       const details: Record<string, TaskVerificationDetail> = {};
 
       tasksData?.forEach((record) => {
-        if (record.task_name === 'workout' || record.task_name === 'bible_reading') {
-          tasks[record.task_name] = true;
-          details[record.task_name] = {
+        if (record.family_task_id) {
+          // Use family_task_id as the key
+          tasks[record.family_task_id] = true;
+          details[record.family_task_id] = {
             confidence: record.verification_confidence ?? null,
             reason: record.verification_reason ?? null,
             proofUrl: record.proof_url ?? null,
             verifiedAt: record.verified_at ?? null,
             model: record.verification_model ?? null,
-            caloriesBurned: record.calories_burned ?? null,
-            durationMinutes: record.duration_minutes ?? null,
-            bibleChapter: record.bible_chapter ?? null,
+            metrics: record.metrics || {},
             completionId: record.id ?? null,
+            familyTaskId: record.family_task_id ?? null,
           };
         }
       });
@@ -876,17 +934,17 @@ export default function HomeScreen() {
     await fetchDailyDetails(date);
   };
   
-  const openVerificationReview = (taskName: 'workout' | 'bible_reading') => {
+  const openVerificationReview = (familyTaskId: string) => {
     const dateForDetails = selectedDate || new Date().toISOString().split('T')[0];
     const detailSource = selectedDate ? selectedDayDetails : todayTaskDetails;
-    const detail = detailSource[taskName];
+    const detail = detailSource[familyTaskId];
 
     if (!detail) {
       Alert.alert('No Verification Data', 'This task does not have AI verification details yet.');
       return;
     }
 
-    setVerificationTaskName(taskName);
+    setVerificationFamilyTaskId(familyTaskId);
     setVerificationImageUri(detail.proofUrl || null);
     setVerificationResult({
       isVerified: true,
@@ -999,6 +1057,7 @@ export default function HomeScreen() {
 
           {/* User Tasks */}
           <Animated.View style={sectionsAnimatedStyle}>
+            <Text style={styles.tasksTitle}>Tasks</Text>
             {tasks.length === 0 ? (
               <View style={{ padding: Spacing.lg, alignItems: 'center' }}>
                 <Text style={{ 
@@ -1012,12 +1071,8 @@ export default function HomeScreen() {
               </View>
             ) : (
               tasks.map((task) => {
-              const taskKey = (task.name === 'workout' || task.name === 'bible_reading')
-                ? task.name
-                : null;
-              if (!taskKey) {
-                return null;
-              }
+              // Use family_task_id as the key
+              const taskKey = task.familyTaskId;
 
               // Show completion status for selected day, or today if no day selected
               const taskCompleted = selectedDate 
@@ -1036,9 +1091,7 @@ export default function HomeScreen() {
                   verified={taskCompleted}
                   onVerify={(imageUri) => handleTaskVerify(taskKey, imageUri)}
                   onViewDetails={() => openVerificationReview(taskKey)}
-                  caloriesBurned={taskDetails?.caloriesBurned ?? null}
-                  durationMinutes={taskDetails?.durationMinutes ?? null}
-                  bibleChapter={taskDetails?.bibleChapter ?? null}
+                  metrics={taskDetails?.metrics || {}}
                 />
               );
             })
@@ -1048,105 +1101,105 @@ export default function HomeScreen() {
       </SafeAreaView>
       
       {/* Verification Modal */}
-      {verificationModalVisible && verificationTaskName && (
-        <VerificationModal
-          visible={verificationModalVisible}
-          imageUri={verificationImageUri}
-          taskName={verificationTaskName === 'workout' ? 'Workout' : 'Read Bible'}
-          verificationResult={verificationResult}
-          loading={verificationLoading}
-          onAccept={handleAcceptVerification}
-          onReject={handleRejectVerification}
-          primaryButtonLabel={verificationModalMode === 'decision' ? 'Accept' : 'Close'}
-          secondaryButtonLabel={verificationModalMode === 'decision' ? 'Reject' : 'Mark Incomplete'}
-          caloriesBurned={
-            verificationModalMode === 'review' && verificationTaskName
-              ? (selectedDate ? selectedDayDetails : todayTaskDetails)[verificationTaskName]?.caloriesBurned ?? null
-              : null
-          }
-          durationMinutes={
-            verificationModalMode === 'review' && verificationTaskName
-              ? (selectedDate ? selectedDayDetails : todayTaskDetails)[verificationTaskName]?.durationMinutes ?? null
-              : null
-          }
-          bibleChapter={
-            verificationModalMode === 'review' && verificationTaskName
-              ? (selectedDate ? selectedDayDetails : todayTaskDetails)[verificationTaskName]?.bibleChapter ?? null
-              : null
-          }
-          onEditDetails={
-            verificationModalMode === 'review' && verificationTaskName
-              ? () => handleEditTaskDetails(verificationTaskName)
-              : undefined
-          }
-        />
-      )}
+      {verificationModalVisible && verificationFamilyTaskId && (() => {
+        const task = tasks.find(t => t.familyTaskId === verificationFamilyTaskId);
+        const taskDetail = verificationFamilyTaskId 
+          ? (selectedDate ? selectedDayDetails : todayTaskDetails)[verificationFamilyTaskId]
+          : null;
+        
+        return (
+          <VerificationModal
+            visible={verificationModalVisible}
+            imageUri={verificationImageUri}
+            taskName={task?.title || 'Task'}
+            verificationResult={verificationResult}
+            loading={verificationLoading}
+            onAccept={handleAcceptVerification}
+            onReject={handleRejectVerification}
+            primaryButtonLabel={verificationModalMode === 'decision' ? 'Accept' : 'Close'}
+            secondaryButtonLabel={verificationModalMode === 'decision' ? 'Reject' : 'Mark Incomplete'}
+            metrics={verificationModalMode === 'review' && taskDetail ? taskDetail.metrics : undefined}
+            onEditDetails={
+              verificationModalMode === 'review' && verificationFamilyTaskId
+                ? () => handleEditTaskDetails(verificationFamilyTaskId)
+                : undefined
+            }
+          />
+        );
+      })()}
       
       {/* Task Details Form */}
-      {taskDetailsFormVisible && (taskDetailsTaskName || editingTaskDetails) && (
-        <TaskDetailsForm
-          visible={taskDetailsFormVisible}
-          taskName={editingTaskDetails?.taskName || taskDetailsTaskName || 'workout'}
-          onSubmit={async (details) => {
-            const taskName = editingTaskDetails?.taskName || taskDetailsTaskName || 'workout';
-            const completionId = editingTaskDetails?.completionId || pendingCompletionId;
-            
-            if (completionId) {
-              await handleSaveTaskDetails(taskName, completionId, details);
-            }
-            
-            setTaskDetailsFormVisible(false);
-            setEditingTaskDetails(null);
-            setPendingCompletionId(null);
-            setTaskDetailsTaskName(null);
-          }}
-          onCancel={async () => {
-            // If this is a new pending completion (not editing), delete it on cancel
-            if (pendingCompletionId && !editingTaskDetails && user) {
-              try {
-                // Check if it's pending before deleting
-                const { data: completionData } = await supabase
-                  .from('task_completions')
-                  .select('verification_status')
-                  .eq('id', pendingCompletionId)
-                  .eq('user_id', user.id)
-                  .single();
-
-                // Only delete if it's still pending (not verified)
-                if (completionData?.verification_status === 'pending') {
-                  await supabase
-                    .from('task_completions')
-                    .delete()
-                    .eq('id', pendingCompletionId)
-                    .eq('user_id', user.id);
-                }
-              } catch (error) {
-                console.error('Error deleting pending completion on cancel:', error);
+      {taskDetailsFormVisible && (pendingFamilyTaskId || editingTaskDetails) && (() => {
+        const familyTaskId = editingTaskDetails?.familyTaskId || pendingFamilyTaskId;
+        const task = tasks.find(t => t.familyTaskId === familyTaskId);
+        
+        if (!task || !familyTaskId) return null;
+        
+        return (
+          <TaskDetailsForm
+            visible={taskDetailsFormVisible}
+            task={task}
+            onSubmit={async (metrics) => {
+              const completionId = editingTaskDetails?.completionId || pendingCompletionId;
+              const taskFamilyId = editingTaskDetails?.familyTaskId || pendingFamilyTaskId || familyTaskId;
+              
+              // Close modal immediately for better UX
+              setTaskDetailsFormVisible(false);
+              setEditingTaskDetails(null);
+              setPendingCompletionId(null);
+              setPendingFamilyTaskId(null);
+              
+              // Save task details in the background
+              if (completionId && taskFamilyId) {
+                // Don't await - let it run in background
+                handleSaveTaskDetails(taskFamilyId, completionId, metrics).catch((error) => {
+                  console.error('Error saving task details:', error);
+                  Alert.alert('Error', 'Failed to save task details. Please try again.');
+                });
               }
-            }
+            }}
+            onCancel={async () => {
+              // If this is a new pending completion (not editing), delete it on cancel
+              if (pendingCompletionId && !editingTaskDetails && user) {
+                try {
+                  // Check if it's pending before deleting
+                  const { data: completionData } = await supabase
+                    .from('task_completions')
+                    .select('verification_status')
+                    .eq('id', pendingCompletionId)
+                    .eq('user_id', user.id)
+                    .single();
 
-            setTaskDetailsFormVisible(false);
-            setEditingTaskDetails(null);
-            setPendingCompletionId(null);
-            setTaskDetailsTaskName(null);
-          }}
-          initialValues={
-            editingTaskDetails
-              ? (() => {
-                  const detailSource = selectedDate ? selectedDayDetails : todayTaskDetails;
-                  const detail = detailSource[editingTaskDetails.taskName];
-                  return detail
-                    ? {
-                        caloriesBurned: detail.caloriesBurned,
-                        durationMinutes: detail.durationMinutes,
-                        bibleChapter: detail.bibleChapter,
-                      }
-                    : undefined;
-                })()
-              : undefined
-          }
-        />
-      )}
+                  // Only delete if it's still pending (not verified)
+                  if (completionData?.verification_status === 'pending') {
+                    await supabase
+                      .from('task_completions')
+                      .delete()
+                      .eq('id', pendingCompletionId)
+                      .eq('user_id', user.id);
+                  }
+                } catch (error) {
+                  console.error('Error deleting pending completion on cancel:', error);
+                }
+              }
+
+              setTaskDetailsFormVisible(false);
+              setEditingTaskDetails(null);
+              setPendingCompletionId(null);
+              setPendingFamilyTaskId(null);
+            }}
+            initialValues={
+              editingTaskDetails
+                ? (() => {
+                    const detailSource = selectedDate ? selectedDayDetails : todayTaskDetails;
+                    const detail = detailSource[editingTaskDetails.familyTaskId];
+                    return detail?.metrics || {};
+                  })()
+                : {}
+            }
+          />
+        );
+      })()}
     </Container>
   );
 }
@@ -1194,5 +1247,13 @@ const styles = StyleSheet.create({
     fontFamily: Typography.headingFont,
     color: Colors.accent,
     fontWeight: Typography.bold,
+  },
+  tasksTitle: {
+    fontSize: Typography.h4,
+    fontFamily: Typography.headingFont,
+    color: Colors.text,
+    fontWeight: Typography.semibold,
+    marginBottom: Spacing.md,
+    paddingHorizontal: Spacing.lg,
   },
 });
