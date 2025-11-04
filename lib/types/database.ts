@@ -23,7 +23,7 @@ export interface Database {
           // Stats
           total_points: number;
           current_streak: number;
-          // Task configuration
+          // Task configuration (DEPRECATED - kept for backward compatibility)
           workout_task_enabled: boolean;
           workout_task_subtitle: string | null;
           bible_task_enabled: boolean;
@@ -116,12 +116,127 @@ export interface Database {
           updated_at?: string;
         };
       };
+      task_templates: {
+        Row: {
+          id: string;
+          name: string;
+          display_name: string;
+          category: 'Physical' | 'Mental' | 'Spiritual' | 'Habits';
+          description: string | null;
+          icon: string;
+          proof_type: 'photo' | 'timer' | 'none';
+          ai_model: string | null;
+          points_value: number;
+          is_active: boolean;
+          display_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          display_name: string;
+          category: 'Physical' | 'Mental' | 'Spiritual' | 'Habits';
+          description?: string | null;
+          icon: string;
+          proof_type: 'photo' | 'timer' | 'none';
+          ai_model?: string | null;
+          points_value?: number;
+          is_active?: boolean;
+          display_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          display_name?: string;
+          category?: 'Physical' | 'Mental' | 'Spiritual' | 'Habits';
+          description?: string | null;
+          icon?: string;
+          proof_type?: 'photo' | 'timer' | 'none';
+          ai_model?: string | null;
+          points_value?: number;
+          is_active?: boolean;
+          display_order?: number;
+          updated_at?: string;
+        };
+      };
+      task_template_metrics: {
+        Row: {
+          id: string;
+          task_template_id: string;
+          metric_name: string;
+          metric_type: 'number' | 'duration' | 'distance' | 'text';
+          unit: string | null;
+          is_required: boolean;
+          display_order: number;
+          placeholder: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          task_template_id: string;
+          metric_name: string;
+          metric_type: 'number' | 'duration' | 'distance' | 'text';
+          unit?: string | null;
+          is_required?: boolean;
+          display_order?: number;
+          placeholder?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          task_template_id?: string;
+          metric_name?: string;
+          metric_type?: 'number' | 'duration' | 'distance' | 'text';
+          unit?: string | null;
+          is_required?: boolean;
+          display_order?: number;
+          placeholder?: string | null;
+        };
+      };
+      family_tasks: {
+        Row: {
+          id: string;
+          family_id: string;
+          task_template_id: string;
+          custom_name: string | null;
+          custom_subtitle: string | null;
+          is_active: boolean;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          task_template_id: string;
+          custom_name?: string | null;
+          custom_subtitle?: string | null;
+          is_active?: boolean;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          family_id?: string;
+          task_template_id?: string;
+          custom_name?: string | null;
+          custom_subtitle?: string | null;
+          is_active?: boolean;
+          created_by?: string | null;
+          updated_at?: string;
+        };
+      };
       task_completions: {
         Row: {
           id: string;
           user_id: string;
           family_id: string;
-          task_name: string;
+          task_name: string | null; // DEPRECATED - kept for backward compatibility
+          family_task_id: string | null;
           completed_date: string;
           proof_url: string | null;
           verification_status: 'pending' | 'verified' | 'rejected';
@@ -129,16 +244,20 @@ export interface Database {
           verification_confidence: number | null;
           verification_reason: string | null;
           verification_model: string | null;
+          // DEPRECATED metric columns - use metrics JSONB instead
           calories_burned: number | null;
           duration_minutes: number | null;
           bible_chapter: string | null;
+          // New flexible metrics storage
+          metrics: Record<string, any>;
           created_at: string;
         };
         Insert: {
           id?: string;
           user_id: string;
           family_id: string;
-          task_name: string;
+          task_name?: string | null;
+          family_task_id?: string | null;
           completed_date: string;
           proof_url?: string | null;
           verification_status?: 'pending' | 'verified' | 'rejected';
@@ -149,13 +268,15 @@ export interface Database {
           calories_burned?: number | null;
           duration_minutes?: number | null;
           bible_chapter?: string | null;
+          metrics?: Record<string, any>;
           created_at?: string;
         };
         Update: {
           id?: string;
           user_id?: string;
           family_id?: string;
-          task_name?: string;
+          task_name?: string | null;
+          family_task_id?: string | null;
           completed_date?: string;
           proof_url?: string | null;
           verification_status?: 'pending' | 'verified' | 'rejected';
@@ -166,6 +287,7 @@ export interface Database {
           calories_burned?: number | null;
           duration_minutes?: number | null;
           bible_chapter?: string | null;
+          metrics?: Record<string, any>;
         };
       };
       points: {
@@ -300,9 +422,33 @@ export interface Database {
   };
 }
 
+// Type exports for convenience
 export type User = Database['public']['Tables']['users']['Row'];
 export type Family = Database['public']['Tables']['families']['Row'];
+export type TaskTemplate = Database['public']['Tables']['task_templates']['Row'];
+export type TaskTemplateMetric = Database['public']['Tables']['task_template_metrics']['Row'];
+export type FamilyTask = Database['public']['Tables']['family_tasks']['Row'];
 export type TaskCompletion = Database['public']['Tables']['task_completions']['Row'];
 export type Point = Database['public']['Tables']['points']['Row'];
 export type FamilyInviteCode = Database['public']['Tables']['family_invite_codes']['Row'];
 export type CheckIn = Database['public']['Tables']['checkins']['Row'];
+export type DailySteps = Database['public']['Tables']['daily_steps']['Row'];
+
+// Extended types with relations
+export interface FamilyTaskWithTemplate extends FamilyTask {
+  task_template?: TaskTemplate;
+  metrics?: TaskTemplateMetric[];
+}
+
+export interface TaskCompletionWithTask extends TaskCompletion {
+  family_task?: FamilyTaskWithTemplate;
+}
+
+// Task category type
+export type TaskCategory = 'Physical' | 'Mental' | 'Spiritual' | 'Habits';
+
+// Proof type
+export type ProofType = 'photo' | 'timer' | 'none';
+
+// AI verification models
+export type AIModel = 'GymVerify' | 'OutdoorVerify' | 'CalmVerify' | 'BookVerify' | 'ProofVerify' | null;
