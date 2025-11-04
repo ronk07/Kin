@@ -14,9 +14,11 @@ import { useHealthKit } from '@/lib/hooks/useHealthKit';
 import { supabase } from '@/lib/supabase/client';
 import { calculateStreak, updateStreakInDatabase } from '@/lib/utils/streak';
 import * as FileSystem from 'expo-file-system/legacy';
+import { useFocusEffect } from 'expo-router';
 import { Flame } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withDelay, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 type TaskVerificationDetail = {
@@ -699,9 +701,56 @@ export default function HomeScreen() {
   const [currentWeekOffset, setCurrentWeekOffset] = useState(0);
   const [weekCompletions, setWeekCompletions] = useState<Record<string, boolean>>({});
 
+  // Animation values
+  const headerOpacity = useSharedValue(0);
+  const headerTranslateY = useSharedValue(-20);
+  const streakScale = useSharedValue(1);
+  const sectionsOpacity = useSharedValue(0);
+
   useEffect(() => {
     fetchWeekCompletions();
   }, [currentWeekOffset, user]);
+
+  // Animate whenever screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      if (!loading && !userLoading && !familyLoading) {
+        // Reset animation values
+        headerOpacity.value = 0;
+        headerTranslateY.value = -20;
+        sectionsOpacity.value = 0;
+        streakScale.value = 1;
+        
+        // Play animations
+        headerOpacity.value = withTiming(1, { duration: 500 });
+        headerTranslateY.value = withTiming(0, { duration: 500 });
+        sectionsOpacity.value = withDelay(100, withTiming(1, { duration: 600 }));
+        
+        // Subtle pulse animation for streak badge
+        streakScale.value = withRepeat(
+          withSequence(
+            withTiming(1.05, { duration: 1000 }),
+            withTiming(1, { duration: 1000 })
+          ),
+          -1,
+          false
+        );
+      }
+    }, [loading, userLoading, familyLoading])
+  );
+
+  const headerAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: headerOpacity.value,
+    transform: [{ translateY: headerTranslateY.value }],
+  }));
+
+  const streakAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: streakScale.value }],
+  }));
+
+  const sectionsAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: sectionsOpacity.value,
+  }));
 
   // Initialize selected date to today on mount
   useEffect(() => {
@@ -911,51 +960,58 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={false}
         >
           {/* Header with welcome message and streak */}
-          <View style={styles.header}>
+          <Animated.View style={[styles.header, headerAnimatedStyle]}>
             <View style={styles.headerText}>
               <Text style={styles.welcomeText}>Welcome back, {userName}</Text>
               <Text style={styles.familySubtext}>{familyName} Family</Text>
             </View>
-            <View style={styles.streakBadge}>
+            <Animated.View style={[styles.streakBadge, streakAnimatedStyle]}>
               <Flame size={20} color={Colors.accent} fill={Colors.accent} />
               <Text style={styles.streakCount}>{streakDays}</Text>
-            </View>
-          </View>
+            </Animated.View>
+          </Animated.View>
 
           {/* Week Tracker */}
-          <WeekTracker
-            weekData={weekData}
-            onPreviousWeek={handlePreviousWeek}
-            onNextWeek={handleNextWeek}
-            onDayPress={handleDayPress}
-            selectedDate={selectedDate || undefined}
-          />
+          <Animated.View style={sectionsAnimatedStyle}>
+            <WeekTracker
+              weekData={weekData}
+              onPreviousWeek={handlePreviousWeek}
+              onNextWeek={handleNextWeek}
+              onDayPress={handleDayPress}
+              selectedDate={selectedDate || undefined}
+            />
+          </Animated.View>
 
           {/* Daily Scripture */}
-          <DailyScripture />
+          <Animated.View style={sectionsAnimatedStyle}>
+            <DailyScripture />
+          </Animated.View>
 
           {/* Step Counter */}
-          <StepCounter
-            steps={selectedDate ? selectedDaySteps : steps}
-            goal={stepGoal}
-            isHealthKitAvailable={isAvailable}
-            isHealthKitAuthorized={isAuthorized}
-          />
+          <Animated.View style={sectionsAnimatedStyle}>
+            <StepCounter
+              steps={selectedDate ? selectedDaySteps : steps}
+              goal={stepGoal}
+              isHealthKitAvailable={isAvailable}
+              isHealthKitAuthorized={isAuthorized}
+            />
+          </Animated.View>
 
           {/* User Tasks */}
-          {tasks.length === 0 ? (
-            <View style={{ padding: Spacing.lg, alignItems: 'center' }}>
-              <Text style={{ 
-                fontSize: Typography.body, 
-                fontFamily: Typography.bodyFont, 
-                color: Colors.textSecondary,
-                textAlign: 'center' 
-              }}>
-                No tasks configured yet. Please contact support if this persists.
-              </Text>
-            </View>
-          ) : (
-            tasks.map((task) => {
+          <Animated.View style={sectionsAnimatedStyle}>
+            {tasks.length === 0 ? (
+              <View style={{ padding: Spacing.lg, alignItems: 'center' }}>
+                <Text style={{ 
+                  fontSize: Typography.body, 
+                  fontFamily: Typography.bodyFont, 
+                  color: Colors.textSecondary,
+                  textAlign: 'center' 
+                }}>
+                  No tasks configured yet. Please contact support if this persists.
+                </Text>
+              </View>
+            ) : (
+              tasks.map((task) => {
               const taskKey = (task.name === 'workout' || task.name === 'bible_reading')
                 ? task.name
                 : null;
@@ -987,6 +1043,7 @@ export default function HomeScreen() {
               );
             })
           )}
+          </Animated.View>
         </ScrollView>
       </SafeAreaView>
       

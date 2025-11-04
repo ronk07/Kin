@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { Check } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSpring } from 'react-native-reanimated';
 import { Card } from './Card';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 
@@ -27,6 +28,35 @@ export function TaskCard({
   bibleChapter,
 }: TaskCardProps) {
   const [loading, setLoading] = useState(false);
+  
+  // Animation values
+  const opacity = useSharedValue(0);
+  const scale = useSharedValue(verified ? 1 : 0.95);
+  const verifiedScale = useSharedValue(1);
+
+  // Fade in on mount
+  useEffect(() => {
+    opacity.value = withTiming(1, { duration: 400 });
+    scale.value = withSpring(1, { damping: 12 });
+  }, []);
+
+  // Animate when verified status changes
+  useEffect(() => {
+    if (verified) {
+      verifiedScale.value = withSpring(1.05, { damping: 8 }, () => {
+        verifiedScale.value = withSpring(1, { damping: 8 });
+      });
+    }
+  }, [verified]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ scale: scale.value }],
+  }));
+
+  const verifiedBadgeStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: verifiedScale.value }],
+  }));
 
   const requestPermissions = async () => {
     const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
@@ -145,14 +175,16 @@ export function TaskCard({
       </View>
 
       {verified ? (
-        <TouchableOpacity 
-          style={styles.verifiedBadge}
-          onPress={onViewDetails}
-          disabled={loading}
-        >
-          <Check size={16} color={Colors.beige} />
-          <Text style={styles.verifiedText}>Verified</Text>
-        </TouchableOpacity>
+        <Animated.View style={verifiedBadgeStyle}>
+          <TouchableOpacity 
+            style={styles.verifiedBadge}
+            onPress={onViewDetails}
+            disabled={loading}
+          >
+            <Check size={16} color={Colors.beige} />
+            <Text style={styles.verifiedText}>Verified</Text>
+          </TouchableOpacity>
+        </Animated.View>
       ) : (
         <TouchableOpacity 
           style={styles.verifyButton}
@@ -166,22 +198,24 @@ export function TaskCard({
   );
 
   return (
-    <Card style={styles.card}>
-      {verified && onViewDetails ? (
-        <TouchableOpacity
-          style={styles.content}
-          onPress={onViewDetails}
-          activeOpacity={0.85}
-          disabled={loading}
-        >
-          {renderContent()}
-        </TouchableOpacity>
-      ) : (
-        <View style={styles.content}>
-          {renderContent()}
-        </View>
-      )}
-    </Card>
+    <Animated.View style={animatedStyle}>
+      <Card style={styles.card}>
+        {verified && onViewDetails ? (
+          <TouchableOpacity
+            style={styles.content}
+            onPress={onViewDetails}
+            activeOpacity={0.85}
+            disabled={loading}
+          >
+            {renderContent()}
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.content}>
+            {renderContent()}
+          </View>
+        )}
+      </Card>
+    </Animated.View>
   );
 }
 
