@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, ScrollView, View, Text, Alert, ActivityIndicator, TouchableOpacity, Share, Platform } from 'react-native';
+import { StyleSheet, ScrollView, View, Text, Alert, ActivityIndicator, TouchableOpacity, Share, Platform, Modal, KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay } from 'react-native-reanimated';
-import { Share2 } from 'lucide-react-native';
+import { Share2, X } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Container } from '@/lib/components/Container';
 import { ProfileCard } from '@/lib/components/ProfileCard';
@@ -26,7 +26,18 @@ export default function MeScreen() {
   const [loadingCode, setLoadingCode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showReminderTimePicker, setShowReminderTimePicker] = useState(false);
+  const [showWorkoutGoalModal, setShowWorkoutGoalModal] = useState(false);
+  const [showStepGoalModal, setShowStepGoalModal] = useState(false);
+  const [tempWorkoutGoal, setTempWorkoutGoal] = useState(5);
+  const [tempStepGoal, setTempStepGoal] = useState(10000);
   const router = useRouter();
+
+  const STEP_GOALS = [
+    { value: 5000, label: '5,000 steps' },
+    { value: 8000, label: '8,000 steps' },
+    { value: 10000, label: '10,000 steps' },
+    { value: 15000, label: '15,000 steps' },
+  ];
 
   // Animation values
   const headerOpacity = useSharedValue(0);
@@ -198,59 +209,33 @@ export default function MeScreen() {
   };
 
   const handleWorkoutGoalChange = () => {
-    Alert.prompt(
-      'Weekly Workout Goal',
-      'How many workouts per week?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Save',
-          onPress: async (value) => {
-            const goal = parseInt(value || '5');
-            if (goal >= 0 && goal <= 7) {
-              try {
-                await updatePreferences({ weekly_workout_goal: goal });
-                Alert.alert('Success', 'Workout goal updated!');
-              } catch (error: any) {
-                Alert.alert('Error', error.message || 'Failed to update goal');
-              }
-            } else {
-              Alert.alert('Error', 'Please enter a number between 0 and 7');
-            }
-          },
-        },
-      ],
-      'plain-text',
-      profile?.weekly_workout_goal?.toString() || '5'
-    );
+    setTempWorkoutGoal(profile?.weekly_workout_goal || 5);
+    setShowWorkoutGoalModal(true);
   };
 
   const handleStepGoalChange = () => {
-    Alert.prompt(
-      'Daily Step Goal',
-      'How many steps per day?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Save',
-          onPress: async (value) => {
-            const goal = parseInt(value || '10000');
-            if (goal >= 0) {
-              try {
-                await updatePreferences({ daily_step_goal: goal });
-                Alert.alert('Success', 'Step goal updated!');
-              } catch (error: any) {
-                Alert.alert('Error', error.message || 'Failed to update goal');
-              }
-            } else {
-              Alert.alert('Error', 'Please enter a valid number');
-            }
-          },
-        },
-      ],
-      'plain-text',
-      profile?.daily_step_goal?.toString() || '10000'
-    );
+    setTempStepGoal(profile?.daily_step_goal || 10000);
+    setShowStepGoalModal(true);
+  };
+
+  const handleSaveWorkoutGoal = async () => {
+    try {
+      await updatePreferences({ weekly_workout_goal: tempWorkoutGoal });
+      setShowWorkoutGoalModal(false);
+      Alert.alert('Success', 'Workout goal updated!');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to update goal');
+    }
+  };
+
+  const handleSaveStepGoal = async () => {
+    try {
+      await updatePreferences({ daily_step_goal: tempStepGoal });
+      setShowStepGoalModal(false);
+      Alert.alert('Success', 'Step goal updated!');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to update goal');
+    }
   };
 
   const handleReminderPress = () => {
@@ -479,6 +464,154 @@ export default function MeScreen() {
           is24Hour={false}
         />
       )}
+
+      {/* Workout Goal Modal */}
+      <Modal
+        visible={showWorkoutGoalModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowWorkoutGoalModal(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={styles.modalBackdrop}>
+            <TouchableOpacity
+              style={styles.modalBackdropTouch}
+              activeOpacity={1}
+              onPress={() => setShowWorkoutGoalModal(false)}
+            />
+            <Card style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Weekly Workout Goal</Text>
+                <TouchableOpacity
+                  onPress={() => setShowWorkoutGoalModal(false)}
+                  style={styles.modalCloseButton}
+                >
+                  <X size={24} color={Colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+              
+              <Text style={styles.modalDescription}>
+                How many days per week do you want to workout?
+              </Text>
+
+              <View style={styles.daysContainer}>
+                {[1, 2, 3, 4, 5, 6, 7].map((day) => (
+                  <TouchableOpacity
+                    key={day}
+                    style={[
+                      styles.dayButton,
+                      tempWorkoutGoal >= day && styles.dayButtonActive,
+                    ]}
+                    onPress={() => setTempWorkoutGoal(day)}
+                  >
+                    <Text
+                      style={[
+                        styles.dayButtonText,
+                        tempWorkoutGoal >= day && styles.dayButtonTextActive,
+                      ]}
+                    >
+                      {day}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.modalValue}>{tempWorkoutGoal} days per week</Text>
+
+              <View style={styles.modalButtonContainer}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonCancel]}
+                  onPress={() => setShowWorkoutGoalModal(false)}
+                >
+                  <Text style={styles.modalButtonCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonSave]}
+                  onPress={handleSaveWorkoutGoal}
+                >
+                  <Text style={styles.modalButtonSaveText}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </Card>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Step Goal Modal */}
+      <Modal
+        visible={showStepGoalModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowStepGoalModal(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={styles.modalBackdrop}>
+            <TouchableOpacity
+              style={styles.modalBackdropTouch}
+              activeOpacity={1}
+              onPress={() => setShowStepGoalModal(false)}
+            />
+            <Card style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Daily Step Goal</Text>
+                <TouchableOpacity
+                  onPress={() => setShowStepGoalModal(false)}
+                  style={styles.modalCloseButton}
+                >
+                  <X size={24} color={Colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+              
+              <Text style={styles.modalDescription}>
+                How many steps do you want to take each day?
+              </Text>
+
+              <View style={styles.stepOptionsContainer}>
+                {STEP_GOALS.map((option) => (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[
+                      styles.stepOption,
+                      tempStepGoal === option.value && styles.stepOptionActive,
+                    ]}
+                    onPress={() => setTempStepGoal(option.value)}
+                  >
+                    <Text
+                      style={[
+                        styles.stepOptionText,
+                        tempStepGoal === option.value && styles.stepOptionTextActive,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <View style={styles.modalButtonContainer}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonCancel]}
+                  onPress={() => setShowStepGoalModal(false)}
+                >
+                  <Text style={styles.modalButtonCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonSave]}
+                  onPress={handleSaveStepGoal}
+                >
+                  <Text style={styles.modalButtonSaveText}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </Card>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </Container>
   );
 }
@@ -580,6 +713,147 @@ const styles = StyleSheet.create({
     fontSize: Typography.body,
     fontFamily: Typography.bodyFont,
     color: Colors.accent,
+    fontWeight: Typography.semibold,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  modalBackdrop: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalBackdropTouch: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  modalCard: {
+    width: '90%',
+    maxWidth: 400,
+    padding: Spacing.lg,
+    backgroundColor: Colors.surface,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  modalTitle: {
+    fontSize: Typography.h3,
+    fontFamily: Typography.headingFont,
+    color: Colors.text,
+    fontWeight: Typography.bold,
+    flex: 1,
+  },
+  modalCloseButton: {
+    padding: Spacing.xs,
+  },
+  modalDescription: {
+    fontSize: Typography.body,
+    fontFamily: Typography.bodyFont,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.lg,
+  },
+  daysContainer: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  dayButton: {
+    flex: 1,
+    aspectRatio: 1,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 2,
+    borderColor: Colors.textSecondary + '30',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dayButtonActive: {
+    backgroundColor: Colors.accent + '20',
+    borderColor: Colors.accent,
+  },
+  dayButtonText: {
+    fontSize: Typography.h3,
+    fontFamily: Typography.bodyFont,
+    color: Colors.textSecondary,
+    fontWeight: Typography.semibold,
+  },
+  dayButtonTextActive: {
+    color: Colors.accent,
+  },
+  modalValue: {
+    fontSize: Typography.body,
+    fontFamily: Typography.bodyFont,
+    color: Colors.accent,
+    fontWeight: Typography.semibold,
+    textAlign: 'center',
+    marginBottom: Spacing.lg,
+  },
+  stepOptionsContainer: {
+    gap: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
+  stepOption: {
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 2,
+    borderColor: Colors.textSecondary + '30',
+  },
+  stepOptionActive: {
+    backgroundColor: Colors.accent + '20',
+    borderColor: Colors.accent,
+  },
+  stepOptionText: {
+    fontSize: Typography.body,
+    fontFamily: Typography.bodyFont,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    fontWeight: Typography.medium,
+  },
+  stepOptionTextActive: {
+    color: Colors.accent,
+  },
+  modalButtonContainer: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    marginTop: Spacing.md,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalButtonCancel: {
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 2,
+    borderColor: Colors.textSecondary + '50',
+  },
+  modalButtonCancelText: {
+    fontSize: Typography.body,
+    fontFamily: Typography.bodyFont,
+    color: Colors.textSecondary,
+    fontWeight: Typography.semibold,
+  },
+  modalButtonSave: {
+    backgroundColor: Colors.accent,
+  },
+  modalButtonSaveText: {
+    fontSize: Typography.body,
+    fontFamily: Typography.bodyFont,
+    color: Colors.beige,
     fontWeight: Typography.semibold,
   },
 });
