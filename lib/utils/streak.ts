@@ -36,12 +36,10 @@ export async function calculateStreak(userId: string): Promise<number> {
     }
 
     if (!familyTasksData || familyTasksData.length === 0) {
-      console.log('No family tasks found for streak calculation');
       return 0; // No tasks assigned to family
     }
 
     const activeFamilyTaskIds = familyTasksData.map(ft => ft.id);
-    console.log('Streak calculation - activeFamilyTaskIds:', activeFamilyTaskIds.length, 'tasks');
 
     if (activeFamilyTaskIds.length === 0) {
       return 0; // No active tasks
@@ -62,11 +60,8 @@ export async function calculateStreak(userId: string): Promise<number> {
     }
 
     if (!data || data.length === 0) {
-      console.log('No verified completions found for streak calculation');
       return 0;
     }
-
-    console.log('Found completions for streak:', data.length, 'completions');
 
     // Group completions by date and track which tasks were completed
     const completionsByDate: Record<string, Set<string>> = {};
@@ -81,20 +76,42 @@ export async function calculateStreak(userId: string): Promise<number> {
       }
     });
 
-    // Calculate consecutive days starting from today going backwards
+    // Simple streak calculation: count consecutive days going backwards
+    // Start from today (or yesterday if today is incomplete) and count backwards
     let streak = 0;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
-    // Check each day going backwards from today
-    for (let i = 0; i < 365; i++) { // Check up to 365 days back
+    
+    // Helper to format date in local timezone (YYYY-MM-DD)
+    const formatLocalDate = (date: Date): string => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+    
+    // Check if today is complete - if not, start from yesterday
+    let startDay = 0;
+    const todayStr = formatLocalDate(today);
+    const todayCompleted = completionsByDate[todayStr];
+    const todayAllComplete = activeFamilyTaskIds.every(taskId => 
+      todayCompleted?.has(taskId) || false
+    );
+    
+    // If today is incomplete, start counting from yesterday
+    if (!todayAllComplete) {
+      startDay = 1;
+    }
+    
+    // Count consecutive days going backwards
+    for (let i = startDay; i < 365; i++) {
       const checkDate = new Date(today);
       checkDate.setDate(today.getDate() - i);
-      const dateStr = checkDate.toISOString().split('T')[0];
+      const dateStr = formatLocalDate(checkDate);
 
       const completedTasks = completionsByDate[dateStr];
       
-      // A day counts if ALL active family tasks are completed (solid circle)
+      // Check if ALL active tasks are completed on this day
       const allTasksCompleted = activeFamilyTaskIds.every(taskId => 
         completedTasks?.has(taskId) || false
       );
@@ -102,17 +119,11 @@ export async function calculateStreak(userId: string): Promise<number> {
       if (allTasksCompleted) {
         streak++;
       } else {
-        // If any day doesn't have all tasks completed, break the streak
-        // This includes today - if today is incomplete, streak is 0
-        if (i === 0) {
-          const completedCount = completedTasks?.size || 0;
-          console.log(`Today is incomplete - ${completedCount}/${activeFamilyTaskIds.length} tasks completed`);
-        }
+        // Found a gap - stop counting
         break;
       }
     }
 
-    console.log('Calculated streak:', streak, 'days');
     return streak;
   } catch (error) {
     console.error('Error calculating streak:', error);

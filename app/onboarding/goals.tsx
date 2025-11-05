@@ -23,26 +23,16 @@ export default function GoalsSetupScreen() {
   const createdFamilyId = params.createdFamilyId as string | undefined;
 
   const handleContinue = () => {
-    // If user is joining a family, skip task selection and go straight to reminders
-    if (isJoining) {
-      router.push({
-        pathname: '/onboarding/reminders',
-        params: {
-          workoutGoal: workoutGoal.toString(),
-          stepGoal: stepGoal.toString(),
-        },
-      });
-    } else {
-      // If user created a family, proceed to task selection
-      router.push({
-        pathname: '/onboarding/tasks',
-        params: {
-          workoutGoal: workoutGoal.toString(),
-          stepGoal: stepGoal.toString(),
-          familyId: createdFamilyId,
-        },
-      });
-    }
+    // Route to HealthKit permission screen
+    router.push({
+      pathname: '/onboarding/healthkit',
+      params: {
+        workoutGoal: workoutGoal.toString(),
+        stepGoal: stepGoal.toString(),
+        isJoining: isJoining.toString(),
+        ...(createdFamilyId && { createdFamilyId }),
+      },
+    });
   };
 
   return (
@@ -60,6 +50,7 @@ export default function GoalsSetupScreen() {
               <View style={[styles.progressDot, styles.progressDotActive]} />
               <View style={[styles.progressDot, styles.progressDotActive]} />
               <View style={[styles.progressDot, styles.progressDotActive]} />
+              <View style={[styles.progressDot]} />
               {!isJoining && <View style={[styles.progressDot]} />}
               <View style={[styles.progressDot]} />
             </View>

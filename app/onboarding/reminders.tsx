@@ -7,6 +7,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Button } from '@/lib/components/Button';
 import { useAuth } from '@/lib/context/AuthContext';
 import { useUser } from '@/lib/context/UserContext';
+import { useFamily } from '@/lib/context/FamilyContext';
 import { supabase } from '@/lib/supabase/client';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 
@@ -18,6 +19,8 @@ export default function RemindersSetupScreen() {
   const [loading, setLoading] = useState(false);
   
   const { user, refreshOnboardingStatus } = useAuth();
+  const { refreshProfile } = useUser();
+  const { refreshAll } = useFamily();
   const router = useRouter();
 
   const handleComplete = async () => {
@@ -45,6 +48,10 @@ export default function RemindersSetupScreen() {
 
       // Refresh onboarding status in AuthContext
       await refreshOnboardingStatus();
+
+      // Refresh user profile and family data to ensure tasks are loaded
+      await refreshProfile();
+      await refreshAll();
 
       // Navigate to main app
       router.replace('/(tabs)');

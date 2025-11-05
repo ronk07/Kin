@@ -12,3 +12,6 @@ UPDATE public.families
 ALTER TABLE public.families
   ALTER COLUMN require_photo_proof SET NOT NULL;
 
+
+
+

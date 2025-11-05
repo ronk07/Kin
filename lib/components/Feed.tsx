@@ -1,7 +1,7 @@
+import { Colors, Spacing, Typography } from '@/constants/theme';
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card } from './Card';
-import { Colors, Typography, Spacing } from '@/constants/theme';
 
 interface FeedItem {
   id: string;
@@ -34,7 +34,7 @@ export function Feed({ items }: FeedProps) {
     <Card style={styles.card}>
       <Text style={styles.title}>Family Feed</Text>
       {items.length === 0 ? (
-        <Text style={styles.empty}>No updates yet. Start working out!</Text>
+        <Text style={styles.empty}>No updates yet. Start completing tasks!</Text>
       ) : (
         <ScrollView style={styles.feedList} showsVerticalScrollIndicator={false}>
           {items.map((item) => (

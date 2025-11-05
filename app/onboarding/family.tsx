@@ -25,7 +25,8 @@ export default function FamilySetupScreen() {
 
   const handleShareCode = async () => {
     try {
-      const message = `Join my family on Kin! 🏋️\n\nUse this invite code: ${formatFamilyCode(createdFamilyCode)}\n\nDownload Kin and let's stay accountable together!`;
+      // Use raw code without formatting (no dash) to match database format
+      const message = `Join my family on Kin! 🏋️\n\nUse this invite code: ${createdFamilyCode}\n\nDownload Kin and let's stay accountable together!`;
       
       await Share.share({
         message,

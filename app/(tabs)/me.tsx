@@ -429,8 +429,6 @@ export default function MeScreen() {
     }
   };
 
-  console.log('MeScreen render - userRole:', userRole, 'tasks:', tasks.length, 'canManage: true (all members can manage)');
-
   if (loading || userLoading || familyLoading) {
     return (
       <Container>
