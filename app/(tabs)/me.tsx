@@ -5,6 +5,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay } from 'react-native-reanimated';
 import { Share2, X } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import * as Clipboard from 'expo-clipboard';
 import { Container } from '@/lib/components/Container';
 import { ProfileCard } from '@/lib/components/ProfileCard';
 import { SettingsSection } from '@/lib/components/SettingsSection';
@@ -15,14 +16,17 @@ import { AddTaskModal } from '@/lib/components/AddTaskModal';
 import { useAuth } from '@/lib/context/AuthContext';
 import { useUser } from '@/lib/context/UserContext';
 import { useFamily } from '@/lib/context/FamilyContext';
+import { useHealthKit } from '@/lib/hooks/useHealthKit';
 import { generateFamilyInviteCode, formatFamilyCode } from '@/lib/utils/familyCode';
 import { supabase } from '@/lib/supabase/client';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
+import { Activity } from 'lucide-react-native';
 
 export default function MeScreen() {
   const { user, signOut } = useAuth();
   const { profile, tasks, updatePreferences, refreshProfile, loading: userLoading } = useUser();
-  const { family, userRole, familyId, loading: familyLoading } = useFamily();
+  const { family, userRole, familyId, loading: familyLoading, updateFamilySettings } = useFamily();
+  const { isAvailable, isAuthorized, requestAuthorization, loading: healthKitLoading } = useHealthKit({ autoRequest: false });
   const [totalPoints, setTotalPoints] = useState(0);
   const [familyCode, setFamilyCode] = useState<string | null>(null);
   const [loadingCode, setLoadingCode] = useState(false);
@@ -198,7 +202,8 @@ export default function MeScreen() {
     if (!familyCode || !family) return;
 
     try {
-      const message = `Join the ${family.name} family on Kin! 🏋️\n\nUse this invite code: ${formatFamilyCode(familyCode)}\n\nDownload Kin and let's stay accountable together!`;
+      // Use raw code without formatting (no dash) to match database format
+      const message = `Join the ${family.name} family on Kin! 🏋️\n\nUse this invite code: ${familyCode}\n\nDownload Kin and let's stay accountable together!`;
       
       await Share.share({
         message,
@@ -206,6 +211,18 @@ export default function MeScreen() {
       });
     } catch (error) {
       console.error('Error sharing code:', error);
+    }
+  };
+
+  const handleCopyCode = async () => {
+    if (!familyCode) return;
+
+    try {
+      await Clipboard.setStringAsync(familyCode);
+      Alert.alert('Copied!', 'Family invite code copied to clipboard');
+    } catch (error) {
+      console.error('Error copying code:', error);
+      Alert.alert('Error', 'Failed to copy code');
     }
   };
 
@@ -288,8 +305,10 @@ export default function MeScreen() {
   };
 
   const handleToggleRequireProof = async (value: boolean) => {
+    if (!familyId) return;
+
     try {
-      await updatePreferences({ require_photo_proof: value });
+      await updateFamilySettings({ require_photo_proof: value });
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to update preference');
     }
@@ -300,6 +319,66 @@ export default function MeScreen() {
       await updatePreferences({ privacy_opt_out: value });
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to update preference');
+    }
+  };
+
+  const handleRequestHealthKitAccess = async () => {
+    if (Platform.OS !== 'ios') {
+      Alert.alert(
+        'Not Available',
+        'HealthKit is only available on iOS devices.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    if (!isAvailable) {
+      Alert.alert(
+        'HealthKit Not Available',
+        'HealthKit requires a development or production build. Please build the app using EAS Build or run it locally.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    if (isAuthorized) {
+      Alert.alert(
+        'Already Enabled',
+        'HealthKit access has already been granted. Your step count is being tracked automatically.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    try {
+      await requestAuthorization();
+      
+      // Wait a moment for authorization state to update
+      setTimeout(() => {
+        // The isAuthorized state should update automatically from the hook
+        // Show feedback based on the result
+        if (isAuthorized) {
+          Alert.alert(
+            'Success!',
+            'HealthKit access granted. Your step count will now be tracked automatically.',
+            [{ text: 'OK' }]
+          );
+        } else {
+          // User denied or permission not granted
+          Alert.alert(
+            'Permission Needed',
+            'To track your daily steps, please enable HealthKit access in Settings > Privacy & Security > Health > Kin.',
+            [{ text: 'OK' }]
+          );
+        }
+      }, 1000);
+    } catch (error: any) {
+      console.error('Error requesting HealthKit permission:', error);
+      Alert.alert(
+        'Error',
+        error.message || 'Failed to request HealthKit permission. You can enable it in Settings > Privacy & Security > Health > Kin.',
+        [{ text: 'OK' }]
+      );
     }
   };
 
@@ -363,14 +442,14 @@ export default function MeScreen() {
   }
 
   const preferencesSettings = [
-    {
+    ...(familyId ? [{
       id: 'proof',
       label: 'Require Photo Proof',
-      description: 'Verify workouts with photos',
+      description: 'Verify tasks with photos.',
       type: 'toggle' as const,
-      value: profile?.require_photo_proof ?? true,
+      value: family?.require_photo_proof ?? false,
       onToggle: handleToggleRequireProof,
-    },
+    }] : []),
     {
       id: 'reminders',
       label: 'Reminders',
@@ -380,6 +459,18 @@ export default function MeScreen() {
       type: 'button' as const,
       onPress: handleReminderPress,
     },
+    // Only show HealthKit option on iOS
+    ...(Platform.OS === 'ios' ? [{
+      id: 'healthkit',
+      label: 'Step Tracking',
+      description: isAuthorized 
+        ? 'HealthKit access enabled - tracking your steps'
+        : isAvailable
+        ? 'Enable to track your daily step count automatically'
+        : 'Requires a development or production build',
+      type: 'button' as const,
+      onPress: handleRequestHealthKitAccess,
+    }] : []),
   ];
 
   return (
@@ -412,9 +503,13 @@ export default function MeScreen() {
                 
                 {familyCode ? (
                   <>
-                    <View style={styles.codeContainer}>
+                    <TouchableOpacity 
+                      style={styles.codeContainer}
+                      onPress={handleCopyCode}
+                      activeOpacity={0.7}
+                    >
                       <Text style={styles.codeText}>{formatFamilyCode(familyCode)}</Text>
-                    </View>
+                    </TouchableOpacity>
                     
                     <TouchableOpacity 
                       style={styles.shareButton}

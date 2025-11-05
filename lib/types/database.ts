@@ -91,6 +91,7 @@ export interface Database {
           invite_code_created_at: string | null;
           total_members: number;
           total_points: number;
+          require_photo_proof: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -102,6 +103,7 @@ export interface Database {
           invite_code_created_at?: string | null;
           total_members?: number;
           total_points?: number;
+          require_photo_proof?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -113,6 +115,7 @@ export interface Database {
           invite_code_created_at?: string | null;
           total_members?: number;
           total_points?: number;
+          require_photo_proof?: boolean;
           updated_at?: string;
         };
       };

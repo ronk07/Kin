@@ -16,6 +16,7 @@ interface TaskCardProps {
   durationMinutes?: number | null;
   bibleChapter?: string | null;
   metrics?: Record<string, any>; // New flexible metrics prop
+  requiresPhotoProof?: boolean;
 }
 
 export function TaskCard({ 
@@ -28,6 +29,7 @@ export function TaskCard({
   durationMinutes,
   bibleChapter,
   metrics,
+  requiresPhotoProof = false,
 }: TaskCardProps) {
   const [loading, setLoading] = useState(false);
   
@@ -76,6 +78,38 @@ export function TaskCard({
 
   const handleVerifyPress = async () => {
     if (loading || verified) return;
+
+    if (requiresPhotoProof) {
+      Alert.alert(
+        'Photo Proof Required',
+        'Your family requires a photo to verify this task.',
+        [
+          {
+            text: 'Take Photo',
+            onPress: async () => {
+              const hasPermission = await requestPermissions();
+              if (hasPermission) {
+                openCamera();
+              }
+            },
+          },
+          {
+            text: 'Choose from Library',
+            onPress: async () => {
+              const hasPermission = await requestPermissions();
+              if (hasPermission) {
+                openLibrary();
+              }
+            },
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+        ]
+      );
+      return;
+    }
 
     Alert.alert(
       'Verify Completion',
@@ -217,7 +251,7 @@ export function TaskCard({
           onPress={handleVerifyPress}
           disabled={loading}
         >
-          <Text style={styles.verifyText}>Complete</Text>
+          <Text style={styles.verifyText}>{requiresPhotoProof ? 'Verify' : 'Complete'}</Text>
         </TouchableOpacity>
       )}
     </>

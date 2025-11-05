@@ -16,7 +16,7 @@ import { calculateStreak, updateStreakInDatabase } from '@/lib/utils/streak';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useFocusEffect } from 'expo-router';
 import { Flame } from 'lucide-react-native';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withDelay, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -32,9 +32,26 @@ type TaskVerificationDetail = {
   familyTaskId: string | null;
 };
 
+const INTERNAL_METRIC_KEYS = new Set(['points_entry_id', 'points_awarded']);
+
+const sanitizeCompletionMetrics = (rawMetrics?: Record<string, any>): Record<string, any> => {
+  if (!rawMetrics || typeof rawMetrics !== 'object') {
+    return {};
+  }
+
+  const sanitized: Record<string, any> = {};
+  Object.entries(rawMetrics).forEach(([key, value]) => {
+    if (!INTERNAL_METRIC_KEYS.has(key)) {
+      sanitized[key] = value;
+    }
+  });
+
+  return sanitized;
+};
+
 export default function HomeScreen() {
   const { user } = useAuth();
-  const { tasks, profile, loading: userLoading } = useUser();
+  const { tasks, profile, loading: userLoading, refreshProfile } = useUser();
   const { family, familyId, loading: familyLoading } = useFamily();
   const { steps, isAvailable, isAuthorized, fetchTodaySteps } = useHealthKit();
   
@@ -62,12 +79,58 @@ export default function HomeScreen() {
   const [pendingCompletionId, setPendingCompletionId] = useState<string | null>(null);
   const [pendingFamilyTaskId, setPendingFamilyTaskId] = useState<string | null>(null);
 
+  const requiresPhotoProof = family?.require_photo_proof ?? false;
+
+  const fetchUserData = useCallback(async () => {
+    if (!user || !familyId) return;
+
+    try {
+      // Calculate and update streak based on tasks being completed
+      const streak = await calculateStreak(user.id);
+      await updateStreakInDatabase(user.id);
+      setStreakDays(streak);
+
+      // Check today's completions
+      const today = new Date().toISOString().split('T')[0];
+      const { data: completions } = await supabase
+        .from('task_completions')
+        .select('id, family_task_id, proof_url, verification_confidence, verification_reason, verification_model, verified_at, metrics')
+        .eq('user_id', user.id)
+        .eq('completed_date', today)
+        .eq('verification_status', 'verified');
+
+      const completed: Record<string, boolean> = {};
+      const details: Record<string, TaskVerificationDetail> = {};
+      completions?.forEach(c => {
+        if (c.family_task_id) {
+          // Use family_task_id as the key
+          completed[c.family_task_id] = true;
+          details[c.family_task_id] = {
+            confidence: c.verification_confidence ?? null,
+            reason: c.verification_reason ?? null,
+            proofUrl: c.proof_url ?? null,
+            verifiedAt: c.verified_at ?? null,
+            model: c.verification_model ?? null,
+            metrics: sanitizeCompletionMetrics(c.metrics),
+            completionId: c.id ?? null,
+            familyTaskId: c.family_task_id ?? null,
+          };
+        }
+      });
+      setCompletedTasks(completed);
+      setTodayTaskDetails(details);
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [user, familyId]);
+
   useEffect(() => {
     if (!userLoading && !familyLoading && user && familyId) {
       fetchUserData();
     }
-  }, [userLoading, familyLoading, user, familyId]);
-
+  }, [userLoading, familyLoading, user, familyId, fetchUserData]);
 
   useEffect(() => {
     // Refresh steps every time the screen is focused
@@ -109,51 +172,6 @@ export default function HomeScreen() {
     }
   }, [steps, user]);
 
-  const fetchUserData = async () => {
-    if (!user || !familyId) return;
-
-    try {
-      // Calculate and update streak based on tasks being completed
-      const streak = await calculateStreak(user.id);
-      await updateStreakInDatabase(user.id);
-      setStreakDays(streak);
-
-      // Check today's completions
-      const today = new Date().toISOString().split('T')[0];
-      const { data: completions } = await supabase
-        .from('task_completions')
-        .select('id, family_task_id, proof_url, verification_confidence, verification_reason, verification_model, verified_at, metrics')
-        .eq('user_id', user.id)
-        .eq('completed_date', today)
-        .eq('verification_status', 'verified');
-
-      const completed: Record<string, boolean> = {};
-      const details: Record<string, TaskVerificationDetail> = {};
-      completions?.forEach(c => {
-        if (c.family_task_id) {
-          // Use family_task_id as the key
-          completed[c.family_task_id] = true;
-          details[c.family_task_id] = {
-            confidence: c.verification_confidence ?? null,
-            reason: c.verification_reason ?? null,
-            proofUrl: c.proof_url ?? null,
-            verifiedAt: c.verified_at ?? null,
-            model: c.verification_model ?? null,
-            metrics: c.metrics || {},
-            completionId: c.id ?? null,
-            familyTaskId: c.family_task_id ?? null,
-          };
-        }
-      });
-      setCompletedTasks(completed);
-      setTodayTaskDetails(details);
-    } catch (error) {
-      console.error('Error fetching user data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleMarkIncomplete = async (familyTaskId: string, dateOverride?: string) => {
     if (!user || !familyId) return;
 
@@ -161,11 +179,31 @@ export default function HomeScreen() {
       // Use provided date, selected date if viewing a different day, otherwise use today
       const completionDate = dateOverride || selectedDate || new Date().toISOString().split('T')[0];
       const todayDate = new Date().toISOString().split('T')[0];
-      
+
       // Get the task template name for points removal
       const task = tasks.find(t => t.familyTaskId === familyTaskId);
       const taskTemplateName = task?.templateName || 'task';
-      
+
+      // Fetch the completion record before deleting so we can remove related points
+      const { data: completionRecord, error: completionFetchError } = await supabase
+        .from('task_completions')
+        .select('id, metrics, family_task_id, completed_date')
+        .eq('family_task_id', familyTaskId)
+        .eq('user_id', user.id)
+        .eq('completed_date', completionDate)
+        .single();
+
+      if (completionFetchError && completionFetchError.code !== 'PGRST116') throw completionFetchError;
+
+      const completionMetrics = (completionRecord?.metrics && typeof completionRecord.metrics === 'object')
+        ? completionRecord.metrics
+        : {};
+
+      const linkedPointsId: string | null = completionMetrics?.points_entry_id ?? null;
+      const linkedPointsValue: number | null = typeof completionMetrics?.points_awarded === 'number'
+        ? completionMetrics.points_awarded
+        : null;
+
       // Delete task completion for the selected date
       const { error: deleteError } = await supabase
         .from('task_completions')
@@ -176,29 +214,45 @@ export default function HomeScreen() {
 
       if (deleteError) throw deleteError;
 
-      // Remove points if they were awarded (we'll need to track this better, but for now just remove last points)
-      // Note: In a production app, you'd want to track which points came from which completion
-      const { data: pointsData } = await supabase
-        .from('points')
-        .select('id, points')
-        .eq('user_id', user.id)
-        .eq('family_id', familyId)
-        .eq('source', `${taskTemplateName} completion`)
-        .order('created_at', { ascending: false })
-        .limit(1);
+      // Remove points if they were awarded
+      let pointsToRemove = linkedPointsValue ?? 0;
+      let pointsRecordId: string | null = linkedPointsId;
 
-      if (pointsData && pointsData.length > 0) {
-        const pointsToRemove = pointsData[0].points;
-        
-        // Delete the points record
+      if (!pointsRecordId) {
+        // Fallback: find the most plausible points record for this task and date
+        const { data: possiblePoints } = await supabase
+          .from('points')
+          .select('id, points, created_at')
+          .eq('user_id', user.id)
+          .eq('family_id', familyId)
+          .eq('source', `${taskTemplateName} completion`)
+          .order('created_at', { ascending: false });
+
+        if (possiblePoints && possiblePoints.length > 0) {
+          const completionStart = new Date(completionDate);
+          completionStart.setHours(0, 0, 0, 0);
+          const completionEnd = new Date(completionDate);
+          completionEnd.setHours(23, 59, 59, 999);
+
+          const matchedPoint = possiblePoints.find(point => {
+            const createdAt = new Date(point.created_at);
+            return createdAt >= completionStart && createdAt <= completionEnd;
+          }) || possiblePoints[0];
+
+          pointsRecordId = matchedPoint.id;
+          pointsToRemove = matchedPoint.points;
+        }
+      }
+
+      if (pointsRecordId) {
         const { error: pointDeleteError } = await supabase
           .from('points')
           .delete()
-          .eq('id', pointsData[0].id);
+          .eq('id', pointsRecordId);
 
         if (pointDeleteError) {
           console.error('Error removing points:', pointDeleteError);
-        } else {
+        } else if (pointsToRemove > 0) {
           // Update user's total_points
           const { data: currentUser } = await supabase
             .from('users')
@@ -244,9 +298,10 @@ export default function HomeScreen() {
       
       // Update streak after marking incomplete
       if (user) {
-        await updateStreakInDatabase(user.id);
         const newStreak = await calculateStreak(user.id);
+        await updateStreakInDatabase(user.id);
         setStreakDays(newStreak);
+        console.log('Streak updated after marking incomplete:', newStreak);
       }
       
       await fetchUserData();
@@ -261,6 +316,14 @@ export default function HomeScreen() {
 
   const handleTaskVerify = async (familyTaskId: string, imageUri?: string) => {
     if (!user || !familyId) return;
+
+    if (requiresPhotoProof && !imageUri) {
+      Alert.alert(
+        'Photo Proof Required',
+        'Your family requires a photo to verify this task. Please take or upload a photo.'
+      );
+      return;
+    }
 
     const completionDate = selectedDate || new Date().toISOString().split('T')[0];
     const today = new Date().toISOString().split('T')[0];
@@ -411,7 +474,7 @@ export default function HomeScreen() {
       // Get the completion record to check its current status
       const { data: completionData, error: fetchError } = await supabase
         .from('task_completions')
-        .select('completed_date, verification_status, family_task_id')
+        .select('completed_date, verification_status, family_task_id, metrics')
         .eq('id', completionId)
         .eq('user_id', user.id)
         .single();
@@ -423,12 +486,18 @@ export default function HomeScreen() {
       const pointsValue = task?.pointsValue || 10;
       const taskTemplateName = task?.templateName || 'task';
 
+      const existingMetrics = (completionData?.metrics && typeof completionData.metrics === 'object')
+        ? completionData.metrics
+        : {};
+
+      let pointsEntryId: string | null = existingMetrics?.points_entry_id ?? null;
+      let awardedPoints = existingMetrics?.points_awarded ?? null;
+
       const updateData: {
         metrics?: Record<string, any>;
         verification_status?: 'verified';
         verified_at?: string;
       } = {
-        metrics: metrics || {},
       };
 
       // If this is a pending completion (just created), mark it as verified and award points
@@ -439,14 +508,21 @@ export default function HomeScreen() {
         updateData.verified_at = new Date().toISOString();
 
         // Award points when marking as verified
-        await supabase
+        const { data: insertedPoint, error: insertPointsError } = await supabase
           .from('points')
           .insert({
             user_id: user.id,
             family_id: familyId,
             points: pointsValue,
             source: `${taskTemplateName} completion`,
-          });
+          })
+          .select('id, points')
+          .single();
+
+        if (insertPointsError) throw insertPointsError;
+
+        pointsEntryId = insertedPoint?.id ?? null;
+        awardedPoints = insertedPoint?.points ?? pointsValue;
 
         // Update UI to show task as completed
         const todayDate = new Date().toISOString().split('T')[0];
@@ -458,6 +534,20 @@ export default function HomeScreen() {
         }
       }
 
+      const mergedMetrics: Record<string, any> = {
+        ...existingMetrics,
+        ...(metrics || {}),
+      };
+
+      if (pointsEntryId) {
+        mergedMetrics.points_entry_id = pointsEntryId;
+      }
+      if (typeof awardedPoints === 'number') {
+        mergedMetrics.points_awarded = awardedPoints;
+      }
+
+      updateData.metrics = mergedMetrics;
+
       const { error } = await supabase
         .from('task_completions')
         .update(updateData)
@@ -468,9 +558,11 @@ export default function HomeScreen() {
 
       // Update streak after saving task details
       if (user) {
-        await updateStreakInDatabase(user.id);
+        // Recalculate streak from scratch to ensure it's accurate
         const newStreak = await calculateStreak(user.id);
+        await updateStreakInDatabase(user.id);
         setStreakDays(newStreak);
+        console.log('Streak updated after task completion:', newStreak);
 
         // Check weekly workout goal if this was a workout task
         if (taskTemplateName === 'workout' && profile?.weekly_workout_goal) {
@@ -745,37 +837,178 @@ export default function HomeScreen() {
   const headerTranslateY = useSharedValue(-20);
   const streakScale = useSharedValue(1);
   const sectionsOpacity = useSharedValue(0);
+  
+  // Track if animations have been initialized
+  const animationsInitialized = useRef(false);
+  const hasAnimatedForFocus = useRef(false);
+  
+  // Track previous task IDs and week offset to prevent infinite loops
+  const prevTaskIdsRef = useRef<string>('');
+  const prevWeekOffsetRef = useRef<number>(currentWeekOffset);
+  const tasksRef = useRef(tasks);
 
   useEffect(() => {
-    fetchWeekCompletions();
-  }, [currentWeekOffset, user]);
+    tasksRef.current = tasks;
+  }, [tasks]);
 
-  // Animate whenever screen comes into focus
+  // Create a stable string representation of task IDs to prevent infinite loops
+  // This will recalculate when tasks array reference changes, but we use ref comparison
+  // in useEffect to only call fetchWeekCompletions when IDs actually change
+  const taskIdsString = useMemo(() => {
+    if (tasks.length === 0) return '';
+    const ids = tasks.map(t => t.familyTaskId).filter(Boolean).sort();
+    return ids.join(',');
+  }, [tasks]);
+
+  // Fetch week completions function - defined early so it can be used in useEffect
+  // Note: We access tasks directly inside the function, not from dependencies
+  // to prevent infinite loops from array reference changes
+  const fetchWeekCompletions = useCallback(async () => {
+    if (!user || !familyId) return;
+
+    // Get all active family tasks for this family
+    const taskList = tasksRef.current || [];
+    const activeFamilyTaskIds = taskList.map(t => t.familyTaskId).filter(Boolean);
+
+    if (activeFamilyTaskIds.length === 0) {
+      setWeekCompletions({});
+      return;
+    }
+
+    // Calculate week boundaries in local timezone to avoid date shifts
+    const today = new Date();
+    const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    
+    // Calculate start of week (Sunday) with timezone-safe date manipulation
+    // currentWeekOffset: 0 = current week, 1 = next week, -1 = previous week
+    const startOfWeek = new Date(today);
+    const daysToSubtract = currentDay - (currentWeekOffset * 7);
+    startOfWeek.setDate(today.getDate() - daysToSubtract);
+    startOfWeek.setHours(0, 0, 0, 0);
+    
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    endOfWeek.setHours(23, 59, 59, 999);
+
+    // Format dates in YYYY-MM-DD format using local timezone (not UTC)
+    // This prevents timezone shifts that cause dates to appear on wrong days
+    const formatLocalDate = (date: Date): string => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    const startDateStr = formatLocalDate(startOfWeek);
+    const endDateStr = formatLocalDate(endOfWeek);
+
+    // Fetch all task completions for the week
+    const { data, error } = await supabase
+      .from('task_completions')
+      .select('completed_date, family_task_id')
+      .eq('user_id', user.id)
+      .eq('verification_status', 'verified')
+      .in('family_task_id', activeFamilyTaskIds)
+      .gte('completed_date', startDateStr)
+      .lte('completed_date', endDateStr);
+
+    if (error) {
+      console.error('Error fetching week completions:', error);
+      return;
+    }
+
+    // Group by date and check if ALL active tasks are completed
+    const completionsByDate: Record<string, Set<string>> = {};
+    data?.forEach(c => {
+      if (c.family_task_id) {
+        if (!completionsByDate[c.completed_date]) {
+          completionsByDate[c.completed_date] = new Set();
+        }
+        completionsByDate[c.completed_date].add(c.family_task_id);
+      }
+    });
+
+    // A day is completed if ALL active family tasks are completed
+    const completions: Record<string, boolean> = {};
+    Object.keys(completionsByDate).forEach(date => {
+      const completedTasks = completionsByDate[date];
+      // Check if all active tasks are completed
+      const allCompleted = activeFamilyTaskIds.every(taskId => completedTasks.has(taskId));
+      completions[date] = allCompleted;
+    });
+
+    setWeekCompletions(completions);
+  }, [user, familyId, currentWeekOffset]); // Don't include tasks to prevent loops
+
+  // Fetch week completions when user, task IDs, or week offset changes
+  // Only trigger when taskIdsString actually changes (not on every render)
+  useEffect(() => {
+    const taskIdsChanged = taskIdsString && taskIdsString !== prevTaskIdsRef.current;
+    const weekOffsetChanged = currentWeekOffset !== prevWeekOffsetRef.current;
+    
+    if (user && (taskIdsChanged || weekOffsetChanged)) {
+      if (taskIdsChanged) {
+        prevTaskIdsRef.current = taskIdsString;
+      }
+      if (weekOffsetChanged) {
+        prevWeekOffsetRef.current = currentWeekOffset;
+      }
+      fetchWeekCompletions();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, taskIdsString, currentWeekOffset]); // Only depend on stable values
+
+  // Initialize animations once on mount
+  useEffect(() => {
+    if (!animationsInitialized.current && !loading && !userLoading && !familyLoading) {
+      animationsInitialized.current = true;
+      
+      // Play initial animations
+      headerOpacity.value = withTiming(1, { duration: 500 });
+      headerTranslateY.value = withTiming(0, { duration: 500 });
+      sectionsOpacity.value = withDelay(100, withTiming(1, { duration: 600 }));
+      
+      // Subtle pulse animation for streak badge (only start once)
+      streakScale.value = withRepeat(
+        withSequence(
+          withTiming(1.05, { duration: 1000 }),
+          withTiming(1, { duration: 1000 })
+        ),
+        -1,
+        false
+      );
+    }
+  }, [loading, userLoading, familyLoading, headerOpacity, headerTranslateY, sectionsOpacity, streakScale]);
+
+  // Refresh data when screen comes into focus (but don't re-animate)
   useFocusEffect(
     React.useCallback(() => {
-      if (!loading && !userLoading && !familyLoading) {
-        // Reset animation values
-        headerOpacity.value = 0;
-        headerTranslateY.value = -20;
-        sectionsOpacity.value = 0;
-        streakScale.value = 1;
-        
-        // Play animations
-        headerOpacity.value = withTiming(1, { duration: 500 });
-        headerTranslateY.value = withTiming(0, { duration: 500 });
-        sectionsOpacity.value = withDelay(100, withTiming(1, { duration: 600 }));
-        
-        // Subtle pulse animation for streak badge
-        streakScale.value = withRepeat(
-          withSequence(
-            withTiming(1.05, { duration: 1000 }),
-            withTiming(1, { duration: 1000 })
-          ),
-          -1,
-          false
-        );
+      // Refresh user data (including tasks) when screen comes into focus
+      // This ensures tasks are loaded after onboarding
+      if (user && familyId && !userLoading && !familyLoading) {
+        refreshProfile().then(() => {
+          if (user && familyId) {
+            fetchUserData().then(() => {
+              // Fetch week completions after user data is loaded
+              // Wait a bit for tasks to be available from UserContext
+              setTimeout(() => {
+                // Call fetchWeekCompletions directly without including it in deps
+                // to prevent infinite loops
+                if (user && familyId && tasks.length > 0) {
+                  fetchWeekCompletions();
+                }
+              }, 100);
+            });
+          }
+        });
       }
-    }, [loading, userLoading, familyLoading])
+      
+      // Reset the focus flag when screen loses focus
+      return () => {
+        hasAnimatedForFocus.current = false;
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id, familyId, userLoading, familyLoading]) // Only depend on stable values
   );
 
   const headerAnimatedStyle = useAnimatedStyle(() => ({
@@ -810,66 +1043,6 @@ export default function HomeScreen() {
     }
   }, [steps, selectedDate, isAuthorized, isAvailable]);
 
-  const fetchWeekCompletions = async () => {
-    if (!user || !familyId) return;
-
-    const today = new Date();
-    const currentDay = today.getDay();
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - currentDay + (currentWeekOffset * 7));
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 6);
-
-    // Get all active family tasks for this family
-    const activeFamilyTaskIds = tasks.map(t => t.familyTaskId);
-
-    if (activeFamilyTaskIds.length === 0) {
-      setWeekCompletions({});
-      return;
-    }
-
-    // Fetch all task completions for the week
-    const { data } = await supabase
-      .from('task_completions')
-      .select('completed_date, family_task_id')
-      .eq('user_id', user.id)
-      .eq('verification_status', 'verified')
-      .in('family_task_id', activeFamilyTaskIds)
-      .gte('completed_date', startOfWeek.toISOString().split('T')[0])
-      .lte('completed_date', endOfWeek.toISOString().split('T')[0]);
-
-    console.log('fetchWeekCompletions:', {
-      startDate: startOfWeek.toISOString().split('T')[0],
-      endDate: endOfWeek.toISOString().split('T')[0],
-      activeFamilyTaskIds,
-      fetchedData: data,
-    });
-
-    // Group by date and check if ALL active tasks are completed
-    const completionsByDate: Record<string, Set<string>> = {};
-    data?.forEach(c => {
-      if (c.family_task_id) {
-        if (!completionsByDate[c.completed_date]) {
-          completionsByDate[c.completed_date] = new Set();
-        }
-        completionsByDate[c.completed_date].add(c.family_task_id);
-      }
-    });
-
-    // A day is completed if ALL active family tasks are completed
-    const completions: Record<string, boolean> = {};
-    Object.keys(completionsByDate).forEach(date => {
-      const completedTasks = completionsByDate[date];
-      // Check if all active tasks are completed
-      const allCompleted = activeFamilyTaskIds.every(taskId => completedTasks.has(taskId));
-      completions[date] = allCompleted;
-      console.log(`Date ${date}: ${completedTasks.size}/${activeFamilyTaskIds.length} tasks completed, allCompleted: ${allCompleted}`);
-    });
-
-    console.log('Week completions result:', completions);
-    setWeekCompletions(completions);
-  };
-
   const fetchDailyDetails = async (date: string) => {
     if (!user) return;
 
@@ -895,7 +1068,7 @@ export default function HomeScreen() {
             proofUrl: record.proof_url ?? null,
             verifiedAt: record.verified_at ?? null,
             model: record.verification_model ?? null,
-            metrics: record.metrics || {},
+            metrics: sanitizeCompletionMetrics(record.metrics),
             completionId: record.id ?? null,
             familyTaskId: record.family_task_id ?? null,
           };
@@ -960,9 +1133,20 @@ export default function HomeScreen() {
   
   const getWeekData = () => {
     const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const currentDay = today.getDay();
+
+    // Align with fetchWeekCompletions week calculation
     const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - currentDay + (currentWeekOffset * 7));
+    startOfWeek.setDate(startOfWeek.getDate() - currentDay + (currentWeekOffset * 7));
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const formatLocalDate = (date: Date): string => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
 
     const weekData = [];
     const dayLetters = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -970,9 +1154,10 @@ export default function HomeScreen() {
     for (let i = 0; i < 7; i++) {
       const date = new Date(startOfWeek);
       date.setDate(startOfWeek.getDate() + i);
-      
-      const isToday = date.toDateString() === today.toDateString();
-      const dateStr = date.toISOString().split('T')[0];
+      date.setHours(0, 0, 0, 0);
+
+      const dateStr = formatLocalDate(date);
+      const isToday = dateStr === formatLocalDate(today);
       
       weekData.push({
         dayLetter: dayLetters[i],
@@ -1092,6 +1277,7 @@ export default function HomeScreen() {
                   onVerify={(imageUri) => handleTaskVerify(taskKey, imageUri)}
                   onViewDetails={() => openVerificationReview(taskKey)}
                   metrics={taskDetails?.metrics || {}}
+                  requiresPhotoProof={requiresPhotoProof}
                 />
               );
             })

@@ -23,6 +23,7 @@ interface FamilyContextType {
   refreshFamily: () => Promise<void>;
   refreshMembers: () => Promise<void>;
   refreshAll: () => Promise<void>;
+  updateFamilySettings: (updates: Partial<Pick<Family, 'require_photo_proof'>>) => Promise<void>;
 }
 
 const FamilyContext = createContext<FamilyContextType | undefined>(undefined);
@@ -180,6 +181,24 @@ export function FamilyProvider({ children }: { children: ReactNode }) {
     await fetchFamilyData();
   };
 
+  const updateFamilySettings = async (updates: Partial<Pick<Family, 'require_photo_proof'>>) => {
+    if (!familyId) return;
+
+    try {
+      const { error } = await supabase
+        .from('families')
+        .update(updates)
+        .eq('id', familyId);
+
+      if (error) throw error;
+
+      await fetchFamily();
+    } catch (error) {
+      console.error('Error updating family settings:', error);
+      throw error;
+    }
+  };
+
   return (
     <FamilyContext.Provider
       value={{
@@ -192,6 +211,7 @@ export function FamilyProvider({ children }: { children: ReactNode }) {
         refreshFamily,
         refreshMembers,
         refreshAll,
+        updateFamilySettings,
       }}
     >
       {children}
